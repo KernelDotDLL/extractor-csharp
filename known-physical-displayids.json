@@ -1,5 +1,39 @@
 {
   "$schema": "v1",
-  "importAll": true,
-  "comment": "SINGLE FLAG MODE: when `importAll` is true, every GameObject from .bin receives collision. Legacy mangos behavior — may produce small obstacle noise from invisible spell effects, triggers, decorative props. Set to false and add explicit entries to switch back to strict per-DisplayId whitelist mode."
+  "importAll": false,
+  "comment": "Strict per-DisplayId whitelist. Only entries listed below produce collision for their GameObjects. Set `importAll: true` (and empty `entries`) to revert to legacy mangos behavior of including every GameObject. Pass via --displayids <path> OR auto-discovered next to the executable.",
+  "entries": [
+    {
+      "displayId": 1907,
+      "comment": "Mailbox (PostBoxHuman)"
+    },
+    {
+      "displayId": 1947,
+      "comment": "Mailbox (PostBoxDwarf)"
+    },
+    {
+      "displayId": 1948,
+      "comment": "Mailbox (variant)"
+    },
+    {
+      "displayId": 2128,
+      "comment": "Mailbox (PostBoxOrc)"
+    },
+    {
+      "displayId": 2190,
+      "comment": "Mailbox (PostBoxGnome)"
+    },
+    {
+      "displayId": 2690,
+      "comment": "Mailbox (variant)"
+    },
+    {
+      "displayId": 4591,
+      "comment": "Mailbox (PostBoxUndead)"
+    },
+    {
+      "displayId": 5971,
+      "comment": "Mailbox (PostBoxTroll)"
+    }
+  ]
 }

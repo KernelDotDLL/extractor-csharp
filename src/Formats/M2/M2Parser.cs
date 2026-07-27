@@ -65,14 +65,27 @@ public sealed class M2Parser
         if (nBoundingIndices <= 0 || nBoundingVertices <= 0
             || nBoundingIndices % 3 != 0)
         {
-            // No bounding mesh in this M2. MaNGOS-faithful behaviour: objects
-            // without a bounding mesh simply have no collision. No .skin render
-            // mesh fallback, no AABB proxy — that was adding collision for fog
-            // emitters, wisps, particle effects, etc. which should never block
-            // pathfinding.
-            _logger?.LogDebug("[M2Parser] No bounding mesh for {Path}: nBoundIdx={Ni} nBoundVerts={Nv}",
-                path, nBoundingIndices, nBoundingVertices);
-            return true; // valid M2, just no collision
+            // No dedicated bounding mesh — try the MaNGOS/TC-faithful fallback
+            // to the M2 header's `collision_box` (CAaBox: 24 bytes = min+max Vec3).
+            // The offset varies by WoW version and model width:
+            //   * Vanilla/TBC: 232
+            //   * WotLK: 336 for most, 352 / 368 for wider models (PostBox, statues, etc.)
+            // Real MaNGOS/TC reads this AABB when no detailed collision mesh
+            // exists and synthesises a 12-triangle box, so street furniture
+            // (wagons, stalls, planters, banners, …) actually blocks pathing.
+            // Without this fallback, our C# port silently dropped those M2s.
+            if (TryBuildCollisionBoxFallback(span, path, out vertices, out indices))
+            {
+                _logger?.LogDebug("[M2Parser] Built collision_box AABB fallback for {Path}", path);
+                return true;
+            }
+
+            // Truly no collision data — return success with empty arrays. The
+            // caller treats empty arrays as "no collision", so genuinely
+            // particle/VFX models stay non-blocking.
+            _logger?.LogDebug("[M2Parser] No collision for {Path}: empty bounding mesh and no collision_box AABB",
+                path);
+            return true;
         }
 
         // Bounds check
@@ -98,6 +111,80 @@ public sealed class M2Parser
             indices[i] = reader.ReadUInt16();
 
         return true;
+    }
+
+    /// <summary>
+    /// MaNGOS/TC-faithful fallback: when an M2 has no dedicated collision mesh,
+    /// read its header `collision_box` (CAaBox, 24 bytes = min+max Vec3) and
+    /// synthesise a 12-triangle AABB box that the navmesh will rasterise.
+    ///
+    /// The collision_box offset varies across M2 files. Probe candidates from
+    /// the canonical list and pick the first one whose floats form a finite,
+    /// non-degenerate box of plausible size. Order: most WotLK M2s land on
+    /// 336, slightly wider models on 352/368, legacy models on 232.
+    /// </summary>
+    private bool TryBuildCollisionBoxFallback(
+        ReadOnlySpan<byte> span,
+        string path,
+        out float[] vertices,
+        out ushort[] indices)
+    {
+        vertices = Array.Empty<float>();
+        indices = Array.Empty<ushort>();
+
+        // Collision box fits in 24 bytes (two Vec3D); require at least one
+        // candidate offset to fit.
+        if (span.Length < 24) return false;
+
+        int[] candidates = { 336, 352, 368, 232, 384, 400 };
+        foreach (int off in candidates)
+        {
+            if (off + 24 > span.Length) continue;
+
+            float minX = BitConverter.ToSingle(span.Slice(off + 0, 4));
+            float minY = BitConverter.ToSingle(span.Slice(off + 4, 4));
+            float minZ = BitConverter.ToSingle(span.Slice(off + 8, 4));
+            float maxX = BitConverter.ToSingle(span.Slice(off + 12, 4));
+            float maxY = BitConverter.ToSingle(span.Slice(off + 16, 4));
+            float maxZ = BitConverter.ToSingle(span.Slice(off + 20, 4));
+
+            // Skip non-finite or zero-volume boxes — they signal "this M2
+            // doesn't carry a collision_box at this offset, try the next".
+            if (!float.IsFinite(minX) || !float.IsFinite(minY) || !float.IsFinite(minZ)
+                || !float.IsFinite(maxX) || !float.IsFinite(maxY) || !float.IsFinite(maxZ))
+                continue;
+            if (maxX - minX < 0.01f || maxY - minY < 0.01f || maxZ - minZ < 0.01f)
+                continue;
+            // Reject absurdly huge (likely junk at the wrong offset).
+            const float maxExtent = 1000f;
+            if (maxX - minX > maxExtent || maxY - minY > maxExtent || maxZ - minZ > maxExtent)
+                continue;
+
+            // Emit the box in (modelY, modelZ, modelX) order so the subsequent
+            // fixCoords(X,Y,Z) → (Z,X,Y) transform still puts the model's
+            // up axis into Recast's height axis (Y). This matches the existing
+            // TryBuildHeaderBoundingBoxProxy convention used for GameObjects.
+            vertices = new float[]
+            {
+                minY, minZ, minX,  minY, minZ, maxX,  maxY, minZ, maxX,  maxY, minZ, minX,
+                minY, maxZ, minX,  minY, maxZ, maxX,  maxY, maxZ, maxX,  maxY, maxZ, minX,
+            };
+            indices = new ushort[]
+            {
+                0, 1, 2,  0, 2, 3,            // bottom (CCW from below)
+                4, 6, 5,  4, 7, 6,            // top (CCW from above)
+                0, 4, 5,  0, 5, 1,            // -Y side
+                1, 5, 6,  1, 6, 2,            // +X side
+                2, 6, 7,  2, 7, 3,            // +Y side
+                3, 7, 4,  3, 4, 0,            // -X side
+            };
+            _logger?.LogDebug(
+                "[M2Parser] collision_box[{Off}] hit for {Path}: min=({MinX:F2},{MinY:F2},{MinZ:F2}) max=({MaxX:F2},{MaxY:F2},{MaxZ:F2})",
+                off, path, minX, minY, minZ, maxX, maxY, maxZ);
+            return true;
+        }
+
+        return false;
     }
 
     /// <summary>
