@@ -93,8 +93,14 @@ public sealed class MmapExtractorService
         // Hardcoded defaults in KnownPhysicalDisplayIds.cs are always loaded;
         // an optional JSON file can extend or document them at runtime — no
         // rebuild required. Defaults are kept safe even when the JSON is
-        // missing or malformed.
-        KnownPhysicalDisplayIds.LoadFromFile(displayIdsPath, _logger);
+        // missing or malformed. If no explicit path is supplied, the loader
+        // auto-searches:
+        //   1. <path> as given (if non-empty)
+        //   2. <exe-dir>/known-physical-displayids.json (next to MaNGOS.Extractor.exe)
+        //   3. <cwd>/known-physical-displayids.json (current working directory)
+        //   4. <cwd>/.. /.. / <repo>/known-physical-displayids.json (source tree fallback)
+        string? resolvedPath = ResolveDisplayIdsPath(displayIdsPath);
+        KnownPhysicalDisplayIds.LoadFromFile(resolvedPath, _logger);
 
         // --- Log Recast config ---
         _logger.LogInformation("[Mmap] Recast config: cellSize={CellSize:F6} cellHeight={CellHeight:F3} " +
@@ -1156,6 +1162,77 @@ public sealed class MmapExtractorService
     }
 
     internal void ClearCache() => _adtParser.ClearCache();
+
+    /// <summary>
+    /// Auto-search for known-physical-displayids.json if no explicit path was
+    /// supplied. First match wins. Returns the resolved path (may be null if
+    /// no file is found anywhere).
+    /// </summary>
+    private string? ResolveDisplayIdsPath(string? explicitPath)
+    {
+        // 1. Explicit path first.
+        if (!string.IsNullOrEmpty(explicitPath))
+            return explicitPath;
+
+        const string fileName = "known-physical-displayids.json";
+
+        // 2. Next to the executable (typical copy/output location).
+        try
+        {
+            var exeDir = AppContext.BaseDirectory;
+            var candidate = Path.Combine(exeDir, fileName);
+            if (File.Exists(candidate))
+            {
+                _logger.LogInformation("[Whitelist] Auto-discovered JSON next to exe: {Path}", candidate);
+                return candidate;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[Whitelist] exe-dir probe failed");
+        }
+
+        // 3. Current working directory.
+        try
+        {
+            var cwd = Environment.CurrentDirectory;
+            var candidate = Path.Combine(cwd, fileName);
+            if (File.Exists(candidate))
+            {
+                _logger.LogInformation("[Whitelist] Auto-discovered JSON in cwd: {Path}", candidate);
+                return candidate;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[Whitelist] cwd probe failed");
+        }
+
+        // 4. Source-tree fallback: walk up from cwd looking for the file.
+        try
+        {
+            var dir = new DirectoryInfo(Environment.CurrentDirectory);
+            while (dir != null)
+            {
+                var candidate = Path.Combine(dir.FullName, fileName);
+                if (File.Exists(candidate))
+                {
+                    _logger.LogInformation("[Whitelist] Auto-discovered JSON in source tree: {Path}", candidate);
+                    return candidate;
+                }
+                // Stop at the first directory that looks like the extractor-csharp repo root.
+                if (File.Exists(Path.Combine(dir.FullName, "MaNGOS.Extractor.csproj")))
+                    return null;
+                dir = dir.Parent;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[Whitelist] source-tree probe failed");
+        }
+
+        return null;
+    }
 
     // -----------------------------------------------------------------------
     // WMO geometry: loads collision mesh from all WMO placements in an ADT.

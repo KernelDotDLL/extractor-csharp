@@ -305,6 +305,11 @@ public static class Program
         public string Locale { get; set; } = "enUS";
         public string GoSpawnsPath { get; set; } = "gameobject_spawns.bin";
         public string? OffMeshPath { get; set; }
+        /// <summary>
+        /// Path to known-physical-displayids.json. If null, the loader auto-searches
+        /// next to the executable and in the current working directory. If no file
+        /// is found anywhere, the whitelist stays empty.
+        /// </summary>
         public string? DisplayIdsPath { get; set; }
         public bool DisableSpatialFilter { get; set; }
     }
