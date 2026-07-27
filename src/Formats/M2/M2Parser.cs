@@ -1,5 +1,7 @@
+using System.IO;
 using MaNGOS.Extractor.Core.Binary;
 using MaNGOS.Extractor.Core.Interfaces;
+using Microsoft.Extensions.Logging;
 
 namespace MaNGOS.Extractor.Formats.M2;
 
@@ -10,10 +12,12 @@ namespace MaNGOS.Extractor.Formats.M2;
 public sealed class M2Parser
 {
     private readonly IArchiveReader _archive;
+    private readonly ILogger? _logger;
 
-    public M2Parser(IArchiveReader archive)
+    public M2Parser(IArchiveReader archive, ILogger? logger = null)
     {
         _archive = archive;
+        _logger = logger;
     }
 
     /// <summary>
@@ -61,9 +65,14 @@ public sealed class M2Parser
         if (nBoundingIndices <= 0 || nBoundingVertices <= 0
             || nBoundingIndices % 3 != 0)
         {
-            // Valid M2 file but no bounding collision mesh — normal for decorative objects.
-            // Return true with empty arrays so callers can distinguish from "file not found".
-            return true;
+            // No bounding mesh in this M2. MaNGOS-faithful behaviour: objects
+            // without a bounding mesh simply have no collision. No .skin render
+            // mesh fallback, no AABB proxy — that was adding collision for fog
+            // emitters, wisps, particle effects, etc. which should never block
+            // pathfinding.
+            _logger?.LogDebug("[M2Parser] No bounding mesh for {Path}: nBoundIdx={Ni} nBoundVerts={Nv}",
+                path, nBoundingIndices, nBoundingVertices);
+            return true; // valid M2, just no collision
         }
 
         // Bounds check
@@ -89,5 +98,274 @@ public sealed class M2Parser
             indices[i] = reader.ReadUInt16();
 
         return true;
+    }
+
+    /// <summary>
+    /// Reads the render mesh from the .skin file paired with the M2.
+    /// Format (WotLK, from wowdev.wiki/M2/.skin) — note: NO padding byte between
+    /// magic and lookupCount, the header is 20 bytes total:
+    ///   magic "SKIN"            at offset 0   (4 bytes)
+    ///   nIndices                at offset 4   (uint32) — count of lookup entries
+    ///   ofsIndices              at offset 8   (uint32) — offset to lookup table
+    ///   nTriangles              at offset 12  (uint32) — count of triangles
+    ///   ofsTriangles            at offset 16  (uint32) — offset to triangle list
+    ///
+    /// Each lookup entry is a uint16 index into the M2's render vertex block.
+    /// Each triangle stores 3 uint16 indices into the lookup table. Resolving the
+    /// chain (skin-tri → lookup → M2 vertex) gives output indices that reference
+    /// the M2 vertex block directly — the caller therefore sees vertices in the
+    /// same model-local space as the bounding mesh.
+    ///
+    /// Returns true with empty arrays when the .skin is missing/invalid/empty —
+    /// caller then counts the M2 in skippedNoBounds. No AABB proxy, ever.
+    /// </summary>
+    public bool TryParseSkinMesh(string m2Path, out float[] vertices, out ushort[] indices)
+    {
+        vertices = Array.Empty<float>();
+        indices = Array.Empty<ushort>();
+
+        // WoW names .skin files with a "00" suffix on the basename, NOT just an
+        // extension swap. So "BookSmallOpen02.m2" pairs with "BookSmallOpen0200.skin".
+        // This is the convention used by both the C++ Mangos mmap-extractor and
+        // the tools tedski5037 referenced. Plain Path.ChangeExtension(".skin")
+        // finds nothing — the file is literally stored with the 00 suffix.
+        string skinPath = InsertSkinSuffix(m2Path);
+        if (!_archive.TryReadFile(skinPath, out ReadOnlyMemory<byte> skinData))
+        {
+            _logger?.LogInformation("[M2Parser] .skin not in MPQ: {Path}", skinPath);
+            return true; // no .skin paired with this M2
+        }
+
+        var skinSpan = skinData.Span;
+
+        // "SKIN" magic at offset 0, header is 20 bytes (no padding between
+        // magic and the first uint32 — that was the bug in the previous attempt).
+        if (skinSpan.Length < 20
+            || skinSpan[0] != 'S' || skinSpan[1] != 'K' || skinSpan[2] != 'I' || skinSpan[3] != 'N')
+        {
+            _logger?.LogInformation("[M2Parser] .skin bad magic/size for {Path} (len={Len})", m2Path, skinSpan.Length);
+            return true;
+        }
+
+        int nIndices     = BitConverter.ToInt32(skinSpan.Slice(4, 4));   // offset 4 — NOT 8
+        int ofsIndices   = BitConverter.ToInt32(skinSpan.Slice(8, 4));   // offset 8
+        int nTriangles   = BitConverter.ToInt32(skinSpan.Slice(12, 4));  // offset 12
+        int ofsTriangles = BitConverter.ToInt32(skinSpan.Slice(16, 4));  // offset 16
+
+        _logger?.LogInformation("[M2Parser] .skin header for {Path}: nIdx={Ni} ofsIdx={Oi} nTri={Nt} ofsTri={Ot} len={L}",
+            m2Path, nIndices, ofsIndices, nTriangles, ofsTriangles, skinSpan.Length);
+
+        if (nIndices <= 0 || nTriangles <= 0)
+        {
+            _logger?.LogInformation("[M2Parser] .skin empty header for {Path} (nIdx={Ni}, nTri={Nt})", m2Path, nIndices, nTriangles);
+            return true;
+        }
+        if ((uint)ofsIndices > (uint)skinSpan.Length
+            || (uint)ofsTriangles > (uint)skinSpan.Length)
+        {
+            _logger?.LogInformation("[M2Parser] .skin offsets OOB for {Path} (ofsIdx={Oi}, ofsTri={Ot}, len={L})",
+                m2Path, ofsIndices, ofsTriangles, skinSpan.Length);
+            return true;
+        }
+        if (ofsIndices + (long)nIndices * 2 > skinSpan.Length)
+        {
+            _logger?.LogInformation("[M2Parser] .skin lookup OOB for {Path}", m2Path);
+            return true;
+        }
+        // Each triangle uses 3 lookup indices, each uint16.
+        if (ofsTriangles + (long)nTriangles * 3 * 2 > skinSpan.Length)
+        {
+            _logger?.LogInformation("[M2Parser] .skin triangles OOB for {Path} (nTri={Nt}, ofsTri={Ot}, len={L})",
+                m2Path, nTriangles, ofsTriangles, skinSpan.Length);
+            return true;
+        }
+
+        // Read the lookup table (maps skin-index → M2 render vertex slot).
+        ushort[] lookup = new ushort[nIndices];
+        for (int i = 0; i < nIndices; i++)
+            lookup[i] = BitConverter.ToUInt16(skinSpan.Slice(ofsIndices + i * 2, 2));
+
+        // Read the M2 again — the .skin only carries indices; vertex positions
+        // live in the M2 render vertex block at offset 60 (nVertices) and 64
+        // (ofsVertices). WotLK stride is 48 bytes per vertex; first 12 bytes
+        // are the (x, y, z) position used for collision.
+        if (!_archive.TryReadFile(m2Path, out ReadOnlyMemory<byte> m2Data))
+            return true;
+
+        var m2Span = m2Data.Span;
+        if (m2Span.Length < 68
+            || m2Span[0] != 'M' || m2Span[1] != 'D' || m2Span[2] != '2' || m2Span[3] != '0')
+            return true;
+
+        int nM2Vertices = BitConverter.ToInt32(m2Span.Slice(60, 4));
+        int ofsM2Vertices = BitConverter.ToInt32(m2Span.Slice(64, 4));
+        if (nM2Vertices <= 0)
+        {
+            _logger?.LogDebug("[M2Parser] M2 has no vertices {Path}", m2Path);
+            return true;
+        }
+        if ((uint)ofsM2Vertices > (uint)m2Span.Length)
+            return true;
+        if ((long)ofsM2Vertices + (long)nM2Vertices * 48 > m2Span.Length)
+        {
+            _logger?.LogDebug("[M2Parser] M2 vertex OOB for {Path} (nV={Nv}, ofsV={Ov}, len={L})",
+                m2Path, nM2Vertices, ofsM2Vertices, m2Span.Length);
+            return true;
+        }
+
+        float[] m2Vertices = new float[nM2Vertices * 3];
+        for (int i = 0; i < nM2Vertices; i++)
+        {
+            int at = ofsM2Vertices + i * 48;
+            float x = BitConverter.ToSingle(m2Span.Slice(at, 4));
+            float y = BitConverter.ToSingle(m2Span.Slice(at + 4, 4));
+            float z = BitConverter.ToSingle(m2Span.Slice(at + 8, 4));
+            m2Vertices[i * 3 + 0] = x;
+            m2Vertices[i * 3 + 1] = y;
+            m2Vertices[i * 3 + 2] = z;
+        }
+
+        // Resolve the full triangle chain: 3 skin-tri → 3 lookup → 3 M2 vertex.
+        var outIndices = new ushort[nTriangles * 3];
+        int kept = 0;
+        for (int t = 0; t < nTriangles; t++)
+        {
+            int triBase = ofsTriangles + t * 3 * 2;
+            ushort a = BitConverter.ToUInt16(skinSpan.Slice(triBase + 0, 2));
+            ushort b = BitConverter.ToUInt16(skinSpan.Slice(triBase + 2, 2));
+            ushort c = BitConverter.ToUInt16(skinSpan.Slice(triBase + 4, 2));
+            if (a >= nIndices || b >= nIndices || c >= nIndices)
+                continue;
+            ushort va = lookup[a], vb = lookup[b], vc = lookup[c];
+            if (va >= nM2Vertices || vb >= nM2Vertices || vc >= nM2Vertices)
+                continue;
+            outIndices[kept++] = va;
+            outIndices[kept++] = vb;
+            outIndices[kept++] = vc;
+        }
+        if (kept == 0)
+        {
+            _logger?.LogInformation("[M2Parser] .skin resolved 0 tris for {Path} (nIdx={Ni}, nTri={Nt}, nV={Nv})",
+                m2Path, nIndices, nTriangles, nM2Vertices);
+            return true;
+        }
+
+        _logger?.LogInformation("[M2Parser] .skin mesh OK for {Path}: {Kept} tris, {Nv} verts",
+            m2Path, kept / 3, nM2Vertices);
+
+        if (kept < outIndices.Length)
+            Array.Resize(ref outIndices, kept);
+
+        vertices = m2Vertices;
+        indices = outIndices;
+        return true;
+    }
+
+    /// <summary>
+    /// Builds a calibrated 12-triangle AABB proxy from the M2 header's
+    /// "model bounding box" (min/max vec3). This is Blizzard's official
+    /// model size — what the game server uses for click targeting and what
+    /// the vmap extractor uses for its calculateTransformedBound fallback.
+    /// We ONLY emit this proxy when the caller has already verified the
+    /// DisplayID is in the KnownPhysicalDisplayIds whitelist — never for
+    /// arbitrary decorative models.
+    ///
+    /// Where the bounding box lives in the M2 header varies between formats:
+    ///   - Vanilla/TBC: offset 232/244
+    ///   - WotLK: most M2s put it at 336, some at 352 (PostBoxHuman), some at 368
+    ///     (wider models). The header between the bounding-mesh fields and the
+    ///     bounding box has a variable number of optional sections (bounding
+    ///     normals, attachments, events, lights, cameras, ribbons, particles,
+    ///     blend maps). We scan a range of candidate offsets and accept the
+    ///     first one whose 6 floats form a finite, non-degenerate box.
+    ///
+    /// Returns true with empty arrays if no candidate offset yields a valid box,
+    /// so the caller can fall back to skippedNoBounds instead of injecting a
+    /// fake 1×1×1 box.
+    /// </summary>
+    public bool TryBuildHeaderBoundingBoxProxy(string m2Path, out float[] vertices, out ushort[] indices)
+    {
+        vertices = Array.Empty<float>();
+        indices = Array.Empty<ushort>();
+
+        if (!_archive.TryReadFile(m2Path, out ReadOnlyMemory<byte> data))
+            return false;
+
+        var span = data.Span;
+        if (span.Length < 256
+            || span[0] != 'M' || span[1] != 'D' || span[2] != '2' || span[3] != '0')
+            return false;
+
+        // Try each candidate offset. First one with a valid (finite, non-zero-volume) box wins.
+        int[] candidates = { 232, 336, 352, 368, 384, 400, 416, 432, 448 };
+        foreach (int off in candidates)
+        {
+            if (off + 24 > span.Length) break;
+            float minX = BitConverter.ToSingle(span.Slice(off + 0, 4));
+            float minY = BitConverter.ToSingle(span.Slice(off + 4, 4));
+            float minZ = BitConverter.ToSingle(span.Slice(off + 8, 4));
+            float maxX = BitConverter.ToSingle(span.Slice(off + 12, 4));
+            float maxY = BitConverter.ToSingle(span.Slice(off + 16, 4));
+            float maxZ = BitConverter.ToSingle(span.Slice(off + 20, 4));
+
+            if (!float.IsFinite(minX) || !float.IsFinite(minY) || !float.IsFinite(minZ)
+                || !float.IsFinite(maxX) || !float.IsFinite(maxY) || !float.IsFinite(maxZ))
+                continue;
+            if (maxX - minX <= 0.01f || maxY - minY <= 0.01f || maxZ - minZ <= 0.01f)
+                continue;
+
+            // 8 corner vertices of the AABB.
+            // We emit them in (modelY, modelZ, modelX) order — NOT (modelX, modelY, modelZ).
+            // Reason: AppendGameObjectM2 will apply fixCoords (X,Y,Z) → (Z,X,Y), and then
+            // AppendGameObjectWorldVertex outputs (world.Y, world.Z, world.X). The double
+            // permute lands model.Z (the model's UP axis) into the SECOND output index,
+            // which is Recast's height axis (Y). A mailbox whose model is 3.1 yards tall
+            // therefore ends up 3.1 yards tall in Recast Y, instead of getting flattened
+            // into a horizontal axis where the bot could just step over it.
+            vertices = new float[]
+            {
+                minY, minZ, minX, minY, minZ, maxX, maxY, minZ, maxX, maxY, minZ, minX,
+                minY, maxZ, minX, minY, maxZ, maxX, maxY, maxZ, maxX, maxY, maxZ, minX,
+            };
+            // 12 triangles (2 per face), CCW seen from outside in the (Y, Z, X) emit order.
+            // Faces are organised by which axis is constant:
+            //   index 0 constant → -Y face (front)
+            //   index 0 = max   → +Y face (back)
+            //   index 1 constant → -Z face (bottom — model Z)
+            //   index 1 = max   → +Z face (top — model Z / Recast HEIGHT)
+            //   index 2 constant → -X face (model X)
+            //   index 2 = max   → +X face
+            indices = new ushort[]
+            {
+                0, 2, 1, 0, 3, 2,   // -Y face
+                4, 5, 6, 4, 6, 7,   // +Y face
+                0, 1, 5, 0, 5, 4,   // -Z face (bottom)
+                1, 2, 6, 1, 6, 5,   // +X face
+                2, 3, 7, 2, 7, 6,   // +Z face (TOP — recast HEIGHT)
+                3, 0, 4, 3, 4, 7,   // -X face
+            };
+            _logger?.LogInformation("[M2Parser] header bbox proxy for {Path} (off={Off}): model=[{MinX:F2},{MinY:F2},{MinZ:F2}]→[{MaxX:F2},{MaxY:F2},{MaxZ:F2}] → Recast Y height={Hz:F2}",
+                m2Path, off, minX, minY, minZ, maxX, maxY, maxZ, maxZ - minZ);
+            return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Builds the MPQ path to the .skin file paired with an M2.
+    /// WoW stores these as "&lt;basename&gt;00.skin" (note the literal "00" before the
+    /// extension AND the extension is replaced from .m2 → .skin). For example
+    /// "Tree01.m2" lives next to "Tree0100.skin". Examples pulled from WotLK MPQ
+    /// listfiles:
+    ///   BookSmallOpen02.m2  → BookSmallOpen0200.skin
+    ///   ElwynnSeaWeed01.m2  → ElwynnSeaWeed0100.skin
+    /// </summary>
+    private static string InsertSkinSuffix(string m2Path)
+    {
+        int dot = m2Path.LastIndexOf('.');
+        if (dot < 0)
+            return m2Path + "00.skin";
+        // "<basename>00.skin" — REPLACE the .m2 extension, do not just prepend 00.
+        return string.Concat(m2Path.AsSpan(0, dot), "00.skin");
     }
 }

@@ -1,0 +1,133 @@
+{
+  "$schema": "v1",
+  "comment": "Single source of truth for the GameObject DisplayId whitelist. Each entry's `displayId` is what the mmap-extractor reads at runtime — these are the only GameObjects that will receive collision. The `entry` field is documentation-only (gameobject_template.entry, for human reference). The `comment` field describes what the object is in-game. Edit this file freely and rerun the extractor (no rebuild required). Pass via --displayids <path>; missing/unreadable files leave the whitelist EMPTY.",
+  "entries": [
+    {
+      "displayId": 26,
+      "entry": 2110,
+      "comment": "Stormwind Cathedral Square zone-marker post (looks like a small tree in-game)"
+    },
+    {
+      "displayId": 1907,
+      "comment": "Mailbox (PostBoxHuman)"
+    },
+    {
+      "displayId": 1947,
+      "comment": "Mailbox (PostBoxDwarf)"
+    },
+    {
+      "displayId": 1948,
+      "comment": "Mailbox (variant)"
+    },
+    {
+      "displayId": 2128,
+      "comment": "Mailbox (PostBoxOrc)"
+    },
+    {
+      "displayId": 2190,
+      "comment": "Mailbox (PostBoxGnome)"
+    },
+    {
+      "displayId": 2690,
+      "comment": "Mailbox (variant)"
+    },
+    {
+      "displayId": 3677,
+      "entry": 186255,
+      "comment": "Brewfest / Festival wagons (Barleybrew, Thunderbrew, T'chali's, Drohn's, Gordok)"
+    },
+    {
+      "displayId": 3678,
+      "entry": 176348,
+      "comment": "Styleen's Cart / Budd's Wagon / Alliance Wagon variants"
+    },
+    {
+      "displayId": 4591,
+      "comment": "Mailbox (PostBoxUndead)"
+    },
+    {
+      "displayId": 5254,
+      "entry": 178428,
+      "comment": "XMasGift01 (Pilgrim's Bounty / Winter Veil gift box)"
+    },
+    {
+      "displayId": 5255,
+      "entry": 178429,
+      "comment": "XMasGift02"
+    },
+    {
+      "displayId": 5256,
+      "entry": 178430,
+      "comment": "XMasGift03"
+    },
+    {
+      "displayId": 5257,
+      "entry": 178431,
+      "comment": "XMasGift04"
+    },
+    {
+      "displayId": 5258,
+      "entry": 178432,
+      "comment": "XMasGift05"
+    },
+    {
+      "displayId": 5259,
+      "entry": 178433,
+      "comment": "XMasGift06"
+    },
+    {
+      "displayId": 5263,
+      "entry": 178649,
+      "comment": "Wreath scale 0.75 (Pilgrim's Bounty hanging wreath)"
+    },
+    {
+      "displayId": 5264,
+      "entry": 178438,
+      "comment": "Lights (Pilgrim's Bounty string lights)"
+    },
+    {
+      "displayId": 5315,
+      "entry": 178667,
+      "comment": "Christmas Tree (Medium) — Winter Veil seasonal tree"
+    },
+    {
+      "displayId": 5392,
+      "entry": 178666,
+      "comment": "Gypsy Wagon / Stormwind Gypsy Wagon"
+    },
+    {
+      "displayId": 5452,
+      "entry": 178746,
+      "comment": "Smokywood Pastures stand (Pilgrim's Bounty red-awning stall near Ian Drake 29093)"
+    },
+    {
+      "displayId": 5971,
+      "comment": "Mailbox (PostBoxTroll)"
+    },
+    {
+      "displayId": 6131,
+      "entry": 180005,
+      "comment": "Darkmoon Faire Wagon Loaded"
+    },
+    {
+      "displayId": 6144,
+      "entry": 180036,
+      "comment": "Darkmoon Faire Wagon Unloaded"
+    },
+    {
+      "displayId": 6513,
+      "entry": 180715,
+      "comment": "Holly Preserver (Pilgrim's Bounty vendor NPC-standee)"
+    },
+    {
+      "displayId": 7516,
+      "entry": 186737,
+      "comment": "Brewfest Wagon Loaded (festive cargo)"
+    },
+    {
+      "displayId": 7735,
+      "entry": 188215,
+      "comment": "Collision PC Size — generic 3D blocker used as a tree/decor stand-in; spawned at ~1473 places"
+    }
+  ]
+}

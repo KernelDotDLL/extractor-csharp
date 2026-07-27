@@ -71,14 +71,15 @@ public sealed class MmapExtractorService
         string? roadMapsDir = null,
         string? vmapDir = null,
         string? mapsDir = null,
-        bool usesLiquids = true)
+        bool usesLiquids = true,
+        string? displayIdsPath = null)
     {
         _archive = archive;
         _logger = loggerFactory.CreateLogger<MmapExtractorService>();
         _wdtReader = new WdtReader(archive);
         _adtParser = new AdtParser(archive, loggerFactory.CreateLogger<AdtParser>());
         _wmoParser = new WmoParser(archive, loggerFactory.CreateLogger<WmoParser>());
-        _m2Parser = new M2Parser(archive);
+        _m2Parser = new M2Parser(archive, loggerFactory.CreateLogger<M2Parser>());
         _outputDir = outputDir;
         _recastConfig = recastConfig;
         _maxDegreeOfParallelism = Math.Max(1, maxDegreeOfParallelism);
@@ -87,6 +88,13 @@ public sealed class MmapExtractorService
         _vmapDir = vmapDir;
         _mapsDir = mapsDir;
         _usesLiquids = usesLiquids;
+
+        // --- Load physical-displayId whitelist (defaults + JSON overrides). ---
+        // Hardcoded defaults in KnownPhysicalDisplayIds.cs are always loaded;
+        // an optional JSON file can extend or document them at runtime — no
+        // rebuild required. Defaults are kept safe even when the JSON is
+        // missing or malformed.
+        KnownPhysicalDisplayIds.LoadFromFile(displayIdsPath, _logger);
 
         // --- Log Recast config ---
         _logger.LogInformation("[Mmap] Recast config: cellSize={CellSize:F6} cellHeight={CellHeight:F3} " +
@@ -521,11 +529,19 @@ public sealed class MmapExtractorService
             {
                 if (go.MapId != mapId)
                     continue;
-                if (go.PosX < wowXMin || go.PosX > wowXMax
-                    || go.PosY < wowYMin || go.PosY > wowYMax)
+
+                // Fast broadphase cull
+                if (go.PosX < wowXMin || go.PosX > wowXMax || go.PosY < wowYMin || go.PosY > wowYMax)
+                {
                     continue;
+                }
 
                 goCandidateCount++;
+
+                if (!_gameObjectModels.ContainsKey(go.DisplayId))
+                {
+                    continue;
+                }
 
                 if (!_gameObjectModels.TryGetValue(go.DisplayId, out var modelRef))
                 {
@@ -534,7 +550,7 @@ public sealed class MmapExtractorService
                 }
 
                 var modelData = _gameObjectModelCache.GetOrAdd(go.DisplayId, static (displayId, state) =>
-                    state!.Owner.LoadGameObjectModel(state.Models[displayId]),
+                    state!.Owner.LoadGameObjectModel(state.Models[displayId], displayId),
                     (Owner: this, Models: _gameObjectModels));
 
                 if (modelData == null)
@@ -1357,26 +1373,57 @@ public sealed class MmapExtractorService
         outVerts.Add(v.X); // Recast Z
     }
 
-    private GameObjectModelData? LoadGameObjectModel(GameObjectModelRef modelRef)
+    private GameObjectModelData? LoadGameObjectModel(GameObjectModelRef modelRef, uint displayId)
     {
+        // STRICT WHITELIST: Only load collision for GameObjects explicitly allowed by ID.
+        // This prevents thousands of small decorative props and invisible triggers 
+        // from generating unwanted small circles/hexagons on the navmesh.
+        if (!KnownPhysicalDisplayIds.Contains(displayId))
+        {
+            return new GameObjectModelData(modelRef.Path, !modelRef.IsWmo, Array.Empty<float>(), Array.Empty<int>(), Vector3.Zero, Vector3.Zero);
+        }
+
         if (modelRef.IsWmo)
             return LoadGameObjectWmo(modelRef.Path);
 
-        return LoadGameObjectM2(modelRef.Path);
+        return LoadGameObjectM2(modelRef.Path, displayId);
     }
 
-    private GameObjectModelData? LoadGameObjectM2(string modelPath)
+    private GameObjectModelData? LoadGameObjectM2(string modelPath, uint displayId)
     {
+        // MaNGOS-faithful pipeline: use the bounding collision mesh from the
+        // M2 header. If no bounding mesh exists AND the object is a known
+        // physical obstacle (mailbox, wagon, etc.), fall back to the M2
+        // header's bounding box (AABB proxy). No .skin render mesh fallback —
+        // that was adding collision for fog emitters, wisps, particle effects.
         if (!_m2Parser.TryParseBoundingMesh(modelPath, out float[] mverts, out ushort[] indices))
             return null; // file not found or fundamentally invalid
 
+        bool isWhitelisted = true; // Already verified by LoadGameObjectModel
+
         if (mverts.Length == 0 || indices.Length == 0)
         {
-            // Valid M2 but no bounding collision mesh — return empty sentinel so caller
-            // can count it as skippedNoBounds (normal for decorative objects).
-            return new GameObjectModelData(modelPath, IsM2: true,
-                Array.Empty<float>(), Array.Empty<int>(),
-                Vector3.Zero, Vector3.Zero);
+            if (isWhitelisted)
+            {
+                if (_m2Parser.TryBuildHeaderBoundingBoxProxy(modelPath, out mverts, out indices) && mverts.Length > 0 && indices.Length > 0)
+                {
+                    _logger.LogWarning("[Mmap-Debug] DisplayID {Did} {Path}: AABB proxy (whitelisted, no bounding mesh in M2)", displayId, modelPath);
+                }
+                else
+                {
+                    _logger.LogWarning("[Mmap-Debug] DisplayID {Did} {Path}: AABB proxy FAILED for whitelisted object!", displayId, modelPath);
+                    return new GameObjectModelData(modelPath, true, Array.Empty<float>(), Array.Empty<int>(), Vector3.Zero, Vector3.Zero);
+                }
+            }
+            else
+            {
+                // Decorative / visual-effect object — no collision (normal).
+                return new GameObjectModelData(modelPath, true, Array.Empty<float>(), Array.Empty<int>(), Vector3.Zero, Vector3.Zero);
+            }
+        }
+        else if (isWhitelisted)
+        {
+            _logger.LogWarning("[Mmap-Debug] DisplayID {Did} {Path}: Has actual bounding mesh ({TriCount} tris)!", displayId, modelPath, indices.Length / 3);
         }
 
         // Apply fixCoords(v) = (v.Z, v.X, v.Y) to match the VMap pipeline:
@@ -1493,18 +1540,33 @@ public sealed class MmapExtractorService
         Quaternion quat = new(spawn.Rot0, spawn.Rot1, spawn.Rot2, spawn.Rot3);
         var rotation = Matrix4x4.Transpose(Matrix4x4.CreateFromQuaternion(quat));
 
-        // position = (pos[0]-32G, pos[1]-32G, pos[2]) — mirrors TerrainBuilder::loadGameObjects
-        float posX = spawn.PosX - 32f * WowConstants.TileSize;
-        float posY = spawn.PosY - 32f * WowConstants.TileSize;
-        float posZ = spawn.PosZ;
         int baseIndex = outVerts.Count / 3;
 
         for (int i = 0; i < modelData.Vertices.Length; i += 3)
         {
-            float vx = modelData.Vertices[i + 0];
-            float vy = modelData.Vertices[i + 1];
-            float vz = modelData.Vertices[i + 2];
-            AppendTransformedVertex(vx, vy, vz, rotation, spawn.Scale, posX, posY, posZ, outVerts);
+            // modelData.Vertices are stored in fixCoords space: (M2_Z, M2_X, M2_Y)
+            float stored_X = modelData.Vertices[i + 0]; // M2_Z
+            float stored_Y = modelData.Vertices[i + 1]; // M2_X
+            float stored_Z = modelData.Vertices[i + 2]; // M2_Y
+            
+            // Revert fixCoords to get raw M2/WoW local coordinates (X=North, Y=West, Z=Up)
+            float localX = stored_Y;
+            float localY = stored_Z;
+            float localZ = stored_X;
+
+            // Apply WoW local rotation
+            var rotated = Vector3.Transform(new Vector3(localX, localY, localZ), rotation) * spawn.Scale;
+
+            // Compute pure World coordinates
+            float worldX = spawn.PosX + rotated.X;
+            float worldY = spawn.PosY + rotated.Y;
+            float worldZ = spawn.PosZ + rotated.Z;
+
+            // Map to Recast coordinate space
+            // ADT passes WoW Y as Recast X, WoW Z as Recast Y, and WoW X as Recast Z
+            outVerts.Add(worldY); // Recast X
+            outVerts.Add(worldZ); // Recast Y
+            outVerts.Add(worldX); // Recast Z
         }
 
         // M2 models need a winding reorder — mirrors TerrainBuilder::copyIndices
@@ -1644,3 +1706,4 @@ internal sealed record GameObjectModelData(
     int[] Indices,
     Vector3 BoundsMin,
     Vector3 BoundsMax);
+

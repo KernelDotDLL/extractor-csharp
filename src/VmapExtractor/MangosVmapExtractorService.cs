@@ -59,7 +59,7 @@ public sealed class MangosVmapExtractorService
         _wdtReader = new WdtReader(archive);
         _adtParser = new AdtParser(archive, loggerFactory.CreateLogger<AdtParser>());
         _wmoParser = new WmoParser(archive, loggerFactory.CreateLogger<WmoParser>());
-        _m2Parser = new M2Parser(archive);
+        _m2Parser = new M2Parser(archive, loggerFactory.CreateLogger<M2Parser>());
         _outputDir = outputDir;
         _globalThreadCount = threadCount;
         _logger.LogInformation("[MangosVmap] Output directory: {OutputDir} (threads={Threads})", outputDir, threadCount);

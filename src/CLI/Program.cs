@@ -159,7 +159,8 @@ public static class Program
                 MmapExtractorService.EnableSpatialFilter = !options.DisableSpatialFilter;
                 var svc = new MmapExtractorService(archives, _loggerFactory, mmapDir,
                     recast, options.Threads, options.GoSpawnsPath, offMeshPath: options.OffMeshPath,
-                    roadMapsDir: roadDir, vmapDir: vmapDir, mapsDir: mapsDir);
+                    roadMapsDir: roadDir, vmapDir: vmapDir, mapsDir: mapsDir,
+                    displayIdsPath: options.DisplayIdsPath);
                 int tiles = await svc.ExtractMapAsync(mapId, mapName, progress, ct, options.TileX, options.TileY);
                 Console.WriteLine($"  [Mmap] {tiles} tiles extracted.");
                 processed += tiles;
@@ -248,6 +249,10 @@ public static class Program
                     if (i + 1 >= args.Length) return BadArg("--offmesh requires a value");
                     opts.OffMeshPath = args[++i];
                     break;
+                case "--displayids":
+                    if (++i >= args.Length) return BadArg("--displayids requires a value");
+                    opts.DisplayIdsPath = args[i];
+                    break;
                 default:
                     return BadArg(args[i]);
             }
@@ -284,6 +289,7 @@ public static class Program
         Console.WriteLine("  --locale <code>     Locale code (default: enUS)");
         Console.WriteLine("  --gospawns <path>   gameobject_spawns.bin path (default: gameobject_spawns.bin)");
         Console.WriteLine("  --offmesh <path>    OffMesh connections file (offmesh.txt format)");
+        Console.WriteLine("  --displayids <path> known-physical-displayids.json path (extends the hardcoded whitelist at runtime)");
         Console.WriteLine("  --no-spatial-filter Disable per-sub-tile triangle spatial pre-filtering");
     }
 
@@ -299,6 +305,7 @@ public static class Program
         public string Locale { get; set; } = "enUS";
         public string GoSpawnsPath { get; set; } = "gameobject_spawns.bin";
         public string? OffMeshPath { get; set; }
+        public string? DisplayIdsPath { get; set; }
         public bool DisableSpatialFilter { get; set; }
     }
 
