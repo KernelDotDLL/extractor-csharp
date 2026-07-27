@@ -35,11 +35,19 @@ public static class KnownPhysicalDisplayIds
     /// </summary>
     private static HashSet<uint> _extraIds = new();
     private static string? _extraSourcePath;
+    private static bool _importAll;
+
+    /// <summary>
+    /// When true (set by JSON flag <c>importAll</c>), the whitelist is bypassed
+    /// — every GameObject from the .bin receives collision. Equivalent to the
+    /// legacy MaNGOS behavior.
+    /// </summary>
+    public static bool ImportAllEnabled => _importAll;
 
     /// <summary>Effective whitelist = JSON-loaded entries (defaults are empty).</summary>
     public static IReadOnlyCollection<uint> Ids => _extraIds.ToArray();
 
-    public static bool Contains(uint displayId) => _extraIds.Contains(displayId);
+    public static bool Contains(uint displayId) => _importAll || _extraIds.Contains(displayId);
 
     /// <summary>
     /// Load the DisplayId whitelist from a JSON file. **Replaces** any prior
@@ -75,10 +83,25 @@ public static class KnownPhysicalDisplayIds
                 AllowTrailingCommas = true,
             };
             var file = JsonSerializer.Deserialize<DisplayIdWhitelistFile>(json, options);
-
-            if (file?.Entries == null || file.Entries.Count == 0)
+            if (file is null)
             {
-                logger?.LogWarning("[Whitelist] JSON at {Path} contained no entries — whitelist is EMPTY.", path);
+                logger?.LogWarning("[Whitelist] JSON at {Path} deserialized to null — whitelist is EMPTY.", path);
+                return;
+            }
+
+            // SINGLE FLAG: importAll bypasses the whitelist entirely.
+            if (file.ImportAll)
+            {
+                _importAll = true;
+                logger?.LogWarning(
+                    "[Whitelist] JSON flag importAll=true — WHITELIST BYPASSED. Every GameObject from .bin will receive collision. This matches the legacy MaNGOS behavior and may add small obstacles (invisible spell effects, triggers, decorative props).");
+                return;
+            }
+
+            _importAll = false;
+            if (file.Entries == null || file.Entries.Count == 0)
+            {
+                logger?.LogWarning("[Whitelist] JSON at {Path} contained no entries and importAll=false — whitelist is EMPTY (no GameObject collision).", path);
                 return;
             }
 
@@ -119,7 +142,16 @@ public sealed class DisplayIdWhitelistFile
     [JsonPropertyName("comment")]
     public string? Comment { get; set; }
 
-    /// <summary>Whitelist entries. Each contributes one DisplayId to the active set.</summary>
+    /// <summary>
+    /// SINGLE FLAG MODE: when true, every GameObject from .bin receives collision
+    /// (legacy mangos behavior). When false (default), only the explicit entries
+    /// below are honoured. Setting this to true is the equivalent of the user's
+    /// "ONE ID that imports everything" — it makes the whitelist a no-op.
+    /// </summary>
+    [JsonPropertyName("importAll")]
+    public bool ImportAll { get; set; }
+
+    /// <summary>Whitelist entries. Used only when <see cref="ImportAll"/> is false.</summary>
     [JsonPropertyName("entries")]
     public List<DisplayIdWhitelistEntry> Entries { get; set; } = new();
 }
