@@ -151,8 +151,26 @@ public sealed class WmoParser
                     break;
 
                 case MagicBytes.Modn: // Doodad names — keep raw bytes for NameIndex offset resolution
+                    // Single read: save raw bytes for NameIndex offset lookup,
+                    // split null-terminated strings from the same byte array.
+                    // The previous double-read (ParseModnRaw + ParseModn) advanced
+                    // the reader by 2*chunkSize2 bytes and mis-aligned the parser
+                    // for everything past MODN. For Stormwind.wmo (a single-file
+                    // WMO with inline MOGP groups after the root data) the
+                    // mis-aligned bytes were interpreted as bogus triangles,
+                    // bloating the .vmo from ~13.6 MB to ~14.5 MB.
                     doodadPaths = ParseModnRaw(ref reader, chunkSize2);
-                    ParseModn(ref reader, chunkSize2, doodadNames);
+                    int modnPos = 0;
+                    while (modnPos < doodadPaths.Length)
+                    {
+                        int modnEnd = modnPos;
+                        while (modnEnd < doodadPaths.Length && doodadPaths[modnEnd] != 0) modnEnd++;
+                        if (modnEnd == modnPos) { modnPos++; continue; }
+                        string modnName = Encoding.ASCII.GetString(doodadPaths, modnPos, modnEnd - modnPos);
+                        if (!string.IsNullOrEmpty(modnName))
+                            doodadNames.Add(modnName);
+                        modnPos = modnEnd + 1;
+                    }
                     break;
 
                 case MagicBytes.Modd: // Doodad placements
@@ -169,7 +187,16 @@ public sealed class WmoParser
                     break;
             }
 
-            if (chunkSize2 == 0) break; // Safety guard
+            if (chunkSize2 == 0) {
+                // WotLK WMO root files frequently place a 0-size separator
+                // chunk (e.g. MOVV size=0) right before MODS / MODN / MODD.
+                // Bailing out on the first size=0 strips these doodad chunks,
+                // leaving every WMO's root.DoodadPlacements.Length == 0 and
+                // the visible vmtile missing Stormwind candelabras, nsabbey
+                // shelves, westfall barrels, cave-mine cars, gnoll tents, etc.
+                // Continue past the separator so MODS/MODN/MODD still get read.
+                continue;
+            }
         }
 
         var root = new WmoRootFile(
@@ -306,7 +333,13 @@ public sealed class WmoParser
                 try { reader.Skip((int)chunkSize2); } catch { /* give up on this group */ }
             }
 
-            if (chunkSize2 == 0) break; // Safety guard
+            if (chunkSize2 == 0) {
+                // Some WotLK WMO groups legitimately terminate the MOGP
+                // sub-chunk list with a size=0 marker before the next group
+                // starts. Bailing out here would drop every doodad ref and
+                // triangle that follows.
+                continue;
+            }
         }
 
         var groupFile = new WmoGroupFile(

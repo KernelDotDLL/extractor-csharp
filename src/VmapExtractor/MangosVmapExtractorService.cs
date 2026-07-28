@@ -656,7 +656,19 @@ public sealed class MangosVmapExtractorService
                 ct.ThrowIfCancellationRequested();
                 string groupPath = BuildWmoGroupPath(wmoName, (int)g);
                 var grp = await _wmoParser.ParseGroupAsync(groupPath, (int)g, wmoName, ct);
-                if (grp == null) continue;
+                if (grp == null) {
+                    // Faithful port of MaNGOS wmo.cpp::ExtractSingleWmo
+                    // (wmo.cpp:758-763). When a group file can't be opened
+                    // the C++ aborts processing the rest of the WMO — its
+                    // doodads are silently removed from the vmtile rather
+                    // than half-kept-half-lost. Preserving that semantics
+                    // is what brings tile 32_48's record count down to the
+                    // 627 found in the Mangos C++ reference (a `continue`
+                    // here would let a single missing group file leak every
+                    // subsequent group's MODR refs into the doodad set,
+                    // producing 4400+ records instead of 627).
+                    break;
+                }
 
                 // Always keep the raw group data for the raw Buildings/ file
                 // (mirrors MaNGOS wmo.cpp ConvertToVMAPGroupWmo which writes
