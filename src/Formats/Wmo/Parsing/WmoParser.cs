@@ -262,39 +262,48 @@ public sealed class WmoParser
             uint chunkMagic = ReverseChunkMagic(reader.ReadUInt32());
             uint chunkSize2 = reader.ReadUInt32();
 
-            switch (chunkMagic)
+            // Wrap each sub-chunk in try/catch so a malformed MOVT/MOVI/MOPY
+            // chunk doesn't abort the whole group and silently drop the MODR
+            // doodad references. We MUST recover doodadRefs even when geometry
+            // parsing fails — otherwise every M2 referenced by the failed group
+            // disappears from the navmesh (the 19 models missing in tile 32_48,
+            // e.g. stormwindcrate01 / westfallbarrel01 / westfallskeleton, are
+            // MODR-only entries whose parent group's MOVT/MOVI was rejected).
+            try
             {
-                case MagicBytes.Movt: // Group WMO files use MOVT for vertices (MOVV is root-only portal vertices)
-                    ParseMovv(ref reader, chunkSize2, vertices);
-                    break;
-
-                case MagicBytes.Movi: // Indices
-                    ParseMovi(ref reader, chunkSize2, triangles);
-                    break;
-
-                case MagicBytes.Mopy:
-                    ParseMopy(ref reader, (int)chunkSize2, materials);
-                    break;
-
-                case MagicBytes.Moba:
-                    rawMoba = ParseMoba(ref reader, (int)chunkSize2);
-                    break;
-
-                case MagicBytes.LiquidMapMagic: // "MLIQ" — WMO group liquid (C++ wmo.cpp: strcmp(fourcc,"MLIQ"))
-                    liquid = ParseLiquid(ref reader, (int)chunkSize2);
-                    break;
-
-                case MagicBytes.Modr: // Doodad references for this group (MaNGOS wmo.cpp:251-258)
-                    doodadRefs = ParseDoodadReferences(ref reader, (int)chunkSize2);
-                    break;
-
-                case MagicBytes.Mobr: // Face indices for BSP nodes
-                    ParseMobr(ref reader, (int)chunkSize2, out rawMobr);
-                    break;
-
-                default:
-                    reader.Skip((int)chunkSize2);
-                    break;
+                switch (chunkMagic)
+                {
+                    case MagicBytes.Movt:
+                        ParseMovv(ref reader, chunkSize2, vertices);
+                        break;
+                    case MagicBytes.Movi:
+                        ParseMovi(ref reader, chunkSize2, triangles);
+                        break;
+                    case MagicBytes.Mopy:
+                        ParseMopy(ref reader, (int)chunkSize2, materials);
+                        break;
+                    case MagicBytes.Moba:
+                        rawMoba = ParseMoba(ref reader, (int)chunkSize2);
+                        break;
+                    case MagicBytes.LiquidMapMagic:
+                        liquid = ParseLiquid(ref reader, (int)chunkSize2);
+                        break;
+                    case MagicBytes.Modr:
+                        doodadRefs = ParseDoodadReferences(ref reader, (int)chunkSize2);
+                        break;
+                    case MagicBytes.Mobr:
+                        ParseMobr(ref reader, (int)chunkSize2, out rawMobr);
+                        break;
+                    default:
+                        reader.Skip((int)chunkSize2);
+                        break;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning("[WmoParser] {Path} group {Idx}: failed to parse chunk 0x{Magic:X8} (size={Size}): {Err}",
+                    path, groupIndex, chunkMagic, chunkSize2, ex.Message);
+                try { reader.Skip((int)chunkSize2); } catch { /* give up on this group */ }
             }
 
             if (chunkSize2 == 0) break; // Safety guard

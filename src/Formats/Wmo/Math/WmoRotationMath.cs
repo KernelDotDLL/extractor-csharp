@@ -61,7 +61,7 @@ public static class WmoRotationMath
     /// </summary>
     public static (float RotX, float RotY, float RotZ) ToWmoRot(Matrix4x4 m)
     {
-        float sy = m.M21; // m[0][2]
+        float sy = m.M13; // m[0][2]
         float y = MathF.Asin(MathF.Max(-1.0f, MathF.Min(1.0f, sy)));
         float cy = MathF.Cos(y);
 
@@ -69,12 +69,12 @@ public static class WmoRotationMath
         if (MathF.Abs(cy) > 1e-6f)
         {
             z = MathF.Atan2(-m.M12, m.M11); // -m[0][1], m[0][0]
-            x = MathF.Atan2(-m.M32, m.M33); // -m[1][2], m[2][2]
+            x = MathF.Atan2(-m.M23, m.M33); // -m[1][2], m[2][2]
         }
         else
         {
             // Gimbal lock: y ~ +/- pi/2.
-            z = MathF.Atan2(m.M13, m.M14);   // m[1][0], m[1][1]
+            z = MathF.Atan2(m.M21, m.M22);  // m[1][0], m[1][1]
             x = 0.0f;
         }
 

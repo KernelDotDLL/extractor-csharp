@@ -168,13 +168,19 @@ internal sealed class MangosVmapGeometryLoader
         string compiledPath = Path.Combine(_vmapDir, "vmaps", nameNoExt + ext);
         if (!File.Exists(compiledPath))
         {
-            _logger.LogDebug("[Mmap-Vmap] Compiled collision file missing: {Path}", compiledPath);
+            // DIAGNOSTIC: was LogDebug — promoted to LogWarning so each
+            // missing .vmd/.vmo file shows up in the default-run log.
+            // This is the smoking gun for spawn.Name vs on-disk filename
+            // mismatches (case, hash, extension, unicode normalisation…).
+            _logger.LogWarning(
+                "[Mmap-Vmap] FICHIER MANQUANT pour spawn.Name={SpawnName} — chemin cherché: {Path}",
+                spawn.Name, compiledPath);
             return false;
         }
 
         if (!_modelCache.TryGetValue(compiledPath, out var model))
         {
-            model = MangosVmoReader.Read(compiledPath);
+            model = MangosVmoReader.Read(compiledPath, _logger);
             if (model == null || !model.Valid)
             {
                 _logger.LogDebug("[Mmap-Vmap] Could not read compiled file: {Path}", compiledPath);

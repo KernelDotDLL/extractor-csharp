@@ -93,8 +93,13 @@ internal sealed class MangosTileAssembler
         }
 
         // convertWorld2 — TileAssembler.cpp:116-197 (build mapSpawns + bound fixes)
+        // Snapshot Values into a List before iterating — we mutate uniqueEntries
+        // later in this same loop (uniqueEntries[spawn.Id] = spawn) to propagate
+        // the computed bound into the writers that read from uniqueEntries.
+        // SortedDictionary throws InvalidOperationException on modification
+        // during enumeration, so materialise the values first.
         var mapSpawns = new List<MangosModelSpawn>(uniqueEntries.Count);
-        foreach (var entry in uniqueEntries.Values)
+        foreach (var entry in uniqueEntries.Values.ToList())
         {
             // Copy into a local so we can mutate it (struct semantics: the
             // foreach variable is treated as const by the C# compiler, but a
@@ -149,6 +154,21 @@ internal sealed class MangosTileAssembler
                 spawn.BoundHigh = new[] { shifted.Hi.X, shifted.Hi.Y, shifted.Hi.Z };
             }
             mapSpawns.Add(spawn);
+
+            // Critical: also write the computed bound back into uniqueEntries.
+            // The C++ Mangos TileAssembler writes mapSpawns straight to the
+            // .vmtile/.vmtree; the C# port reads uniqueEntries for that, but
+            // uniqueEntries still carries the boundless copy from dir_bin
+            // (AppendM2Record never sets MOD_HAS_BOUND — the bound is computed
+            // HERE in TileAssembler, not at extraction time). Without this
+            // assignment, every M2 record ends up in .vmtile without
+            // MOD_HAS_BOUND, and the runtime either falls back to 1×1×1 (so the
+            // navmesh ignores the model — bots walk through trees, charriots,
+            // etc.) or skips the spawn entirely. Concrete symptom: same trees
+            // and same wagon names are present in both extractors' .vmtile
+            // (same triangle count loaded), but C++ writes MOD_HAS_BOUND for
+            // 100% of M2 records while C# writes it for ~0.4%.
+            uniqueEntries[spawn.Id] = spawn;
         }
 
         // BIH::build — TileAssembler.cpp:143-145
@@ -325,7 +345,7 @@ internal sealed class MangosTileAssembler
             // bound needs. If the .vmd is missing, fall back to skipping the
             // bound (the spawn stays without MOD_HAS_BOUND, like a failed
             // raw_model.Read in the C++).
-            var wm = MangosVmoReader.Read(Path.Combine(_sourceDir, spawn.Name));
+            var wm = MangosVmoReader.Read(Path.Combine(_sourceDir, spawn.Name), _logger);
             if (wm == null || wm.Groups.Count == 0 || wm.Groups[0].Vertices.Length == 0)
             {
                 // No geometry — leave the spawn without a bound (C++ returns

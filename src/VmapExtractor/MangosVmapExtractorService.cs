@@ -202,7 +202,18 @@ public sealed class MangosVmapExtractorService
                     if (await TryBuildWmoAsync(wmoName, ct))
                         builtVmo++;
                     else
+                    {
                         failedBuilds++;
+                        // Symmetric to the M2 fix at line ~281: if the WMO build fails,
+                        // remove the entry from _writtenVmoFiles so subsequent encounters
+                        // of the same WMO (in other tiles or the global pass) can retry
+                        // and populate _wmoDoodadData. Without this, a single transient
+                        // parse failure poisons the cache for every later placement of
+                        // that WMO and silently drops all its doodads (trees, signs,
+                        // charriots — exactly what the user reported missing in
+                        // Stormwind/Orgrimmar).
+                        _writtenVmoFiles.Remove(vmoRelPath);
+                    }
                 }
 
                 var spawn = BuildWmoSpawn(mapId, tileX, tileY, (uint)i, wmoName, modf);
@@ -258,13 +269,30 @@ public sealed class MangosVmapExtractorService
 
                 // Build the .vmd for this M2 (once per unique M2 file).
                 string vmdRelPath = m2Name.Replace('\\', '/') + ".vmd";
-                if (_writtenVmoFiles.Add(vmdRelPath))
+                bool isNew = _writtenVmoFiles.Add(vmdRelPath);
+                bool ok = true;
+                if (isNew)
                 {
-                    if (await TryBuildM2Async(m2Name, ct))
-                        builtVmd++;
+                    ok = await TryBuildM2Async(m2Name, ct);
+                    if (ok) builtVmd++;
                     else
+                    {
                         failedBuilds++;
+                        // Preserve the _writtenVmoFiles invariant: presence in
+                        // the set must mean "file confirmed built on disk".
+                        // Without this Remove(), a single transient failure
+                        // (e.g. a doodad reused across many tiles/WMOs that
+                        // hits an MPQ hiccup the first time it's seen) leaves
+                        // the entry poisoned, so every subsequent caller
+                        // (TryBuildM2ForDoodad, ExtractSet, the GameObject
+                        // pass) trusts the cache, writes a dir_bin record,
+                        // and ends up with a .vmtile entry pointing at a
+                        // non-existent .vmd → "FICHIER MANQUANT" for all 300
+                        // instances. Mirrors the GameObject pass (l. 558).
+                        _writtenVmoFiles.Remove(vmdRelPath);
+                    }
                 }
+                if (!ok) continue;
 
                 var spawn = BuildM2Spawn(mapId, tileX, tileY, (uint)i, m2Name, mddf);
                 perTile.Add(spawn);
@@ -403,6 +431,18 @@ public sealed class MangosVmapExtractorService
             {
                 ct.ThrowIfCancellationRequested();
                 wmoIdx++;
+
+                // Faithful port de wmo.cpp::ExtractSingleWmo:679-699 — fichiers de
+                // groupe "<root>_NNN.wmo" : on sort sans tenter de les parser
+                // comme racine (ils sont lus par leur propre root via
+                // BuildWmoGroupPath). Sans ce filtre, le scan global essaie
+                // d'extraire chaque Stormwind_000.wmo / Stormwind_001.wmo / ...
+                // comme un WMO racine, ce qui échoue systématiquement (les
+                // groupes commencent par MOGP, pas MOHD). Sur Azeroth, ~9355
+                // fichiers de groupe se faisaient passer pour des racines,
+                // faisant monter failed et ralentir le scan inutilement.
+                if (IsWmoGroupFile(wmoPath)) { globalWmoSkipped++; return; }
+
                 string uni = MangosVmapBuildingWriter.GetUniformName(wmoPath);
                 // Dedup: if we already processed this uniform, skip. The highest-
                 // priority archive was processed LAST in reverse order, so its
@@ -625,13 +665,20 @@ public sealed class MangosVmapExtractorService
 
                 // Only add to the filtered list for the FINAL vmaps/ output.
                 var filtered = FilterWmoGroupCollision(grp);
-                if (filtered == null) continue;
-
-                groups.Add(filtered);
+                if (filtered != null) groups.Add(filtered);
 
                 // Faithful port of MaNGOS wmo.cpp:766-773: every loaded group's
                 // MODR doodad indices get merged into a single set, which
-                // Doodad::ExtractSet then iterates over.
+                // Doodad::ExtractSet then iterates over. CRUCIAL: in the C++
+                // the doodad-ref merge sits AFTER ConvertToVMAPGroupWmo, outside
+                // any per-group filter — groups whose geometry is purely
+                // decorative (everything MOPY-flagged NoCollision, e.g. non-
+                // colliding banners or trim meshes inside a complex WMO like
+                // Stormwind.wmo) STILL contribute their MODR doodad refs to
+                // the global set. Dropping them on `continue` here would
+                // silently lose every tree/wagon/banner painted onto those
+                // groups — which is exactly what was happening for Stormwind
+                // Cathedral Square.
                 if (grp.DoodadReferences != null)
                 {
                     foreach (var r in grp.DoodadReferences) doodadRefSet.Add(r);
@@ -671,7 +718,7 @@ public sealed class MangosVmapExtractorService
             // + MBIH + GBIH) — exactly what MaNGOS Model::WriteFile / Wmo::WriteFile
             // produce. This is the SINGLE output format; there is no intermediate
             // "raw" representation in the C++ pipeline.
-            byte[] vmoBytes = MangosVmoReader.ToBytes(root.Root.Header.WmoId, groups);
+            byte[] vmoBytes = MangosVmoReader.ToBytes(root.Root.Header.WmoId, groups, _logger);
 
             // C++ Mangos uses .vmo for the compiled collision file in vmaps/ — replace
             // the extension so the mmap-extractor's spawn.Name + ".vmo" lookup matches.
@@ -727,7 +774,27 @@ public sealed class MangosVmapExtractorService
                 validTris.Add(t);
             }
         }
-        if (validTris.Count == 0) return null;
+        if (validTris.Count == 0)
+        {
+            // Faithful port of MaNGOS wmo.cpp::ConvertToVMAPGroupWmo with
+            // preciseVectorData=true: every group gets written to the .vmo,
+            // even purely-decorative groups with zero collision triangles.
+            // Returning null here would drop the GMOD slot entirely, shifting
+            // all subsequent group indices by one and producing a ~50% size
+            // mismatch on large WMOs like Stormwind.wmo (31 MB in C++ vs 14 MB
+            // observed here). Match the C++ behaviour: emit an empty GroupModel
+            // with the header AABB and zero verts/tris (equivalent to writing
+            // GRP + empty INDX + empty VERT chunks).
+            return new MangosVmoReader.GroupModel
+            {
+                MogpFlags = grp.Header.Flags,
+                GroupWMOID = (uint)grp.Header.GroupWmoId,
+                BoundLo = new Vector3(grp.Header.BoundingBoxMin.X, grp.Header.BoundingBoxMin.Y, grp.Header.BoundingBoxMin.Z),
+                BoundHi = new Vector3(grp.Header.BoundingBoxMax.X, grp.Header.BoundingBoxMax.Y, grp.Header.BoundingBoxMax.Z),
+                Vertices = Array.Empty<Vector3>(),
+                Triangles = Array.Empty<MangosVmoReader.MeshTriangle>(),
+            };
+        }
 
         // Collect and remap the referenced vertices
         var usedVertSet = new HashSet<ushort>(validTris.Count * 3);
@@ -821,9 +888,26 @@ public sealed class MangosVmapExtractorService
         try
         {
             if (!_m2Parser.TryParseBoundingMesh(m2Name, out var verts, out var indices))
+            {
+                // Either the MPQ doesn't contain this file (path case / name
+                // mismatch for WMO doodads — the most actionable failure), or the
+                // file is present but the MD20 magic / size check rejected it.
+                // WARN because it usually points to a real bug in our path
+                // resolution. Mangos C++ also returns false here for the same
+                // reason but does NOT log, so we have to make up for that here.
+                _logger.LogWarning("[MangosVmap] M2 parse/read FAILED (file not found, MD20 magic invalid or truncated file): {M2}", m2Name);
                 return false;
+            }
             if (verts.Length == 0 || indices.Length == 0)
+            {
+                // Mangos C++ also skips these (Model::open returns false when
+                // nBoundingTriangles == 0 — see mangostwo-server/.../vmap-extractor/
+                // model.cpp:112-117). INFO because it's the expected behaviour
+                // for purely decorative M2s that don't carry collision geometry;
+                // flooding the log with WARNs would obscure the real fails above.
+                _logger.LogInformation("[MangosVmap] M2 has no bounding mesh (mangos-faithful skip): {M2}", m2Name);
                 return false;
+            }
 
             var v = new Vector3[verts.Length / 3];
             for (int i = 0; i < v.Length; i++)
@@ -869,7 +953,7 @@ public sealed class MangosVmapExtractorService
             // + MBIH + GBIH) — exactly what MaNGOS M2::WriteFile / Model::WriteFile
             // produce. The M2's bounding-mesh indices (ushort per vertex) are written
             // into the GMOD group's TRIM chunk; no separate "raw" index truncation.
-            byte[] vmdBytes = MangosVmoReader.ToBytes(0, new[] { grp });
+            byte[] vmdBytes = MangosVmoReader.ToBytes(0, new[] { grp }, _logger);
 
             // C++ Mangos uses .vmd for the compiled collision file in vmaps/ — replace
             // the extension so the mmap-extractor's spawn.Name + ".vmd" lookup matches.
@@ -971,5 +1055,23 @@ public sealed class MangosVmapExtractorService
         return string.IsNullOrEmpty(dir)
             ? $"{filename}_{groupIndex:D3}.wmo"
             : $"{dir}\\{filename}_{groupIndex:D3}.wmo";
+    }
+
+    /// <summary>
+    /// Detects WMO group files (the per-group split files like
+    /// "Stormwind_000.wmo", "Stormwind_001.wmo", …) that the C++ Mangos
+    /// extractor skips in its global scan (wmo.cpp:679-699) because they're
+    /// already loaded through their owning root WMO via BuildWmoGroupPath.
+    /// Group files are identified by the 3 digits immediately following the
+    /// last underscore in the basename.
+    /// </summary>
+    private static bool IsWmoGroupFile(string path)
+    {
+        string name = Path.GetFileNameWithoutExtension(path);
+        int idx = name.LastIndexOf('_');
+        if (idx < 0 || idx + 4 > name.Length) return false;
+        return char.IsDigit(name[idx + 1])
+            && char.IsDigit(name[idx + 2])
+            && char.IsDigit(name[idx + 3]);
     }
 }

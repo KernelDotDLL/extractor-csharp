@@ -1,7 +1,7 @@
 {
   "$schema": "v1",
   "importAll": false,
-  "comment": "Strict per-DisplayId whitelist. Only entries listed below produce collision for their GameObjects. Set `importAll: true` (and empty `entries`) to revert to legacy mangos behavior of including every GameObject. Pass via --displayids <path> OR auto-discovered next to the executable.",
+  "comment": "Strict per-DisplayId whitelist. Only entries listed below produce collision for their GameObjects. Set `importAll: true` (and empty `entries`) to revert to legacy mangos behavior of including every GameObject. Pass via --displayids <path> OR auto-discovered next to the executable.: importAll=true — every GameObject from .bin receives collision, like the original mangos-tc C++ extractor. Per-DisplayId entries below are ignored. Pass via --displayids <path> OR auto-discovered next to the executable.",
   "entries": [
     {
       "displayId": 1907,

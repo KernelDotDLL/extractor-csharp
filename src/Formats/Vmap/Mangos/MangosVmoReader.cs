@@ -1,6 +1,8 @@
 using System.IO;
 using System.Numerics;
 using System.Text;
+using MaNGOS.Extractor.Formats.Vmap.Mangos.G3d;
+using Microsoft.Extensions.Logging;
 
 namespace MaNGOS.Extractor.Formats.Vmap.Mangos;
 
@@ -97,7 +99,7 @@ public static class MangosVmoReader
     /// Read a .vmo / .vmd file. Returns null if the file is not a valid
     /// Mangos vmap file.
     /// </summary>
-    public static WorldModelData? Read(string filePath)
+    public static WorldModelData? Read(string filePath, ILogger? logger = null)
     {
         if (!File.Exists(filePath)) return null;
         try
@@ -106,8 +108,12 @@ public static class MangosVmoReader
             using var br = new BinaryReader(fs);
             return Read(br);
         }
-        catch
+        catch (Exception ex)
         {
+            // Was silently swallowed — that left 878k placements falling into
+            // the 1x1x1 AABB fallback in MangosTileAssembler. Log it so we
+            // can see the actual cause (EndOfStreamException, malformed chunk).
+            logger?.LogWarning(ex, "[MangosVmoReader] Failed to read {File}", filePath);
             return null;
         }
     }
@@ -277,12 +283,20 @@ public static class MangosVmoReader
     /// content must be written to two locations (MaNGOS vmap-extractor writes
     /// once to <c>Buildings/{uniform_name}</c> and once to <c>vmaps/{path}.vmo</c>).
     /// </summary>
-    public static byte[] ToBytes(uint rootWmoId, IReadOnlyList<GroupModel> groups)
+    public static byte[] ToBytes(uint rootWmoId, IReadOnlyList<GroupModel> groups, ILogger? logger = null)
     {
-        using var ms = new MemoryStream();
-        using var bw = new BinaryWriter(ms);
-        Write(bw, rootWmoId, groups);
-        return ms.ToArray();
+        try
+        {
+            using var ms = new MemoryStream();
+            using var bw = new BinaryWriter(ms);
+            Write(bw, rootWmoId, groups);
+            return ms.ToArray();
+        }
+        catch (Exception ex)
+        {
+            logger?.LogWarning(ex, "[MangosVmoReader] Failed to serialize M2 group (rootWmoId={RootWmoId})", rootWmoId);
+            return Array.Empty<byte>();
+        }
     }
 
     public static void Write(BinaryWriter bw, uint rootWmoId, IReadOnlyList<GroupModel> groups)
@@ -308,9 +322,36 @@ public static class MangosVmoReader
             WriteGroupModel(bw, groups[g]);
         }
 
-        // GBIH chunk — empty BIH (just bounds, 0 nodes)
+        // GBIH chunk — BIH over the groups (one entry per GroupModel, bounds
+        // = the group's vertex AABB). The MaNGOS server's StaticMapTree walks
+        // this tree first to pick which groups intersect a query ray / point
+        // before drilling into per-group MBIH; an empty GBIH (objCount=0) here
+        // means the runtime "finds nothing" even though the geometry is right
+        // there in the same file. This was the smoking gun for the missing
+        // trees/charriots in the navmesh — every .vmo/.vmd shipped with a
+        // dummy empty tree.
         bw.Write(Encoding.ASCII.GetBytes("GBIH"));
-        WriteEmptyBih(bw);
+        var gbih = new Bih();
+        if (groups.Count > 0)
+        {
+            gbih.Build(groups, (GroupModel g, out G3dAaBox b) =>
+            {
+                if (g.Vertices.Length == 0)
+                {
+                    b = new G3dAaBox();
+                    return;
+                }
+                var lo = g.Vertices[0];
+                var hi = g.Vertices[0];
+                for (int v = 1; v < g.Vertices.Length; v++)
+                {
+                    lo = Vector3.Min(lo, g.Vertices[v]);
+                    hi = Vector3.Max(hi, g.Vertices[v]);
+                }
+                b = new G3dAaBox { Lo = new G3dVector3(lo.X, lo.Y, lo.Z), Hi = new G3dVector3(hi.X, hi.Y, hi.Z) };
+            });
+        }
+        gbih.WriteToFile(bw);
     }
 
     private static void WriteGroupModel(BinaryWriter bw, GroupModel grp)
@@ -344,9 +385,26 @@ public static class MangosVmoReader
             bw.Write(grp.Triangles[t].I2);
         }
 
-        // MBIH chunk — empty BIH
+        // MBIH chunk — BIH over the triangles (one leaf per triangle, bounds
+        // = the triangle's vertex AABB). The runtime uses this for actual
+        // collision/navmesh queries inside a group; an empty MBIH means the
+        // .vmo/.vmd effectively advertises no geometry to raycasts even
+        // though the mesh is fully written in VERT/TRIM.
         bw.Write(Encoding.ASCII.GetBytes("MBIH"));
-        WriteEmptyBih(bw);
+        var mbih = new Bih();
+        if (grp.Triangles.Length > 0 && grp.Vertices.Length > 0)
+        {
+            mbih.Build(grp.Triangles, (MeshTriangle tri, out G3dAaBox b) =>
+            {
+                var v0 = grp.Vertices[(int)tri.I0];
+                var v1 = grp.Vertices[(int)tri.I1];
+                var v2 = grp.Vertices[(int)tri.I2];
+                var lo = Vector3.Min(Vector3.Min(v0, v1), v2);
+                var hi = Vector3.Max(Vector3.Max(v0, v1), v2);
+                b = new G3dAaBox { Lo = new G3dVector3(lo.X, lo.Y, lo.Z), Hi = new G3dVector3(hi.X, hi.Y, hi.Z) };
+            });
+        }
+        mbih.WriteToFile(bw);
 
         // LIQU chunk — no liquid (chunkSize = 0)
         bw.Write(Encoding.ASCII.GetBytes("LIQU"));
