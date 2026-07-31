@@ -731,6 +731,7 @@ public sealed class MmapExtractorService
                 }
 
                 byte chunkAreaType = adt.GetChunkAreaType(chunkIdx);
+                var liquid = adt.GetLiquidData(chunkIdx);
                 // Per-sub-triangle road lookup. The road mask is 4×4 sub-zones
                 // per chunk packed into 16 bits (2 bytes) — same bit layout as
                 // the MCNK holes bitmask below. A sub-triangle (z, x) belongs
@@ -767,7 +768,53 @@ public sealed class MmapExtractorService
                         // This is the per-sub-triangle precision that lets
                         // the bot path along the center of a road strip
                         // instead of the entire chunk (33.33 yards wide).
-                        byte areaType = baseAreaType;
+                        byte areaType = 1;
+                        if (liquid.HasLiquid)
+                        {
+                            int localZ = z - liquid.OffsetY;
+                            int localX = x - liquid.OffsetX;
+                            if (localZ >= 0 && localZ < liquid.Height
+                                && localX >= 0 && localX < liquid.Width)
+                            {
+                                int bit = localZ * liquid.Width + localX;
+                                bool showBit = liquid.ShowMask == 0UL
+                                    || ((liquid.ShowMask >> bit) & 1UL) != 0UL;
+                                if (showBit)
+                                {
+                                    float maxLLevel = float.NegativeInfinity;
+                                    int[] cornerLZ = { localZ, localZ, localZ + 1, localZ + 1 };
+                                    int[] cornerLX = { localX, localX + 1, localX, localX + 1 };
+                                    for (int c = 0; c < 4; c++)
+                                    {
+                                        int cz = cornerLZ[c];
+                                        int cx = cornerLX[c];
+                                        if (liquid.DepthMap != null
+                                            && cz >= 0 && cz <= liquid.Height
+                                            && cx >= 0 && cx <= liquid.Width)
+                                        {
+                                            float h = liquid.DepthMap[cz * (liquid.Width + 1) + cx];
+                                            if (h > maxLLevel) maxLLevel = h;
+                                        }
+                                        else if (liquid.LiquidLevel > maxLLevel)
+                                        {
+                                            maxLLevel = liquid.LiquidLevel;
+                                        }
+                                    }
+
+                                    float minTLevel = float.PositiveInfinity;
+                                    int[] cornerTZ = { z, z, z + 1, z + 1 };
+                                    int[] cornerTX = { x, x + 1, x, x + 1 };
+                                    for (int c = 0; c < 4; c++)
+                                    {
+                                        float h = AdtMcvt.GetV9(chunkHeights, cornerTZ[c], cornerTX[c]);
+                                        if (h < minTLevel) minTLevel = h;
+                                    }
+
+                                    if (minTLevel <= maxLLevel)
+                                        areaType = baseAreaType;
+                                }
+                            }
+                        }
                         if (isCenterChunk && centerRoadMask != null)
                         {
                             int roadByte = chunkMaskByteBase + (holeBit >> 3);
