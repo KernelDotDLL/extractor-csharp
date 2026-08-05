@@ -221,12 +221,13 @@ public sealed class MmapExtractorService
             return 0;
         }
 
-        var tiles = _wdtReader.GetExistingTiles();
-        if (onlyTileX.HasValue && onlyTileY.HasValue)
-            tiles = tiles.Where(t => t.X == onlyTileX.Value && t.Y == onlyTileY.Value).ToList();
+        var allTiles = _wdtReader.GetExistingTiles();
+        if (allTiles.Count == 0)
+            allTiles = DiscoverGlobalVmapTiles(mapId, mapName);
 
-        if (tiles.Count == 0 && !onlyTileX.HasValue && !onlyTileY.HasValue)
-            tiles = DiscoverGlobalVmapTiles(mapId, mapName);
+        var tiles = allTiles;
+        if (onlyTileX.HasValue && onlyTileY.HasValue)
+            tiles = allTiles.Where(t => t.X == onlyTileX.Value && t.Y == onlyTileY.Value).ToList();
 
         _logger.LogInformation("Found {Count} ADT tiles for map {MapName} (id={MapId})", tiles.Count, mapName, mapId);
 
@@ -236,11 +237,11 @@ public sealed class MmapExtractorService
             _logger.LogInformation("[Mmap] {GoCount} GameObject spawns on map {MapName} (id={MapId})", goCount, mapName, mapId);
 
         // Compute the navmesh origin: bmin of the max-index tile, matching C++ MapBuilder.
-        int maxAdtX = tiles.Count > 0 ? tiles.Max(t => t.X) : 31;
-        int maxAdtY = tiles.Count > 0 ? tiles.Max(t => t.Y) : 31;
+        int maxAdtX = allTiles.Count > 0 ? allTiles.Max(t => t.X) : 31;
+        int maxAdtY = allTiles.Count > 0 ? allTiles.Max(t => t.Y) : 31;
 
         // Write mmap header upfront so the map file exists even if extraction is cancelled later.
-        WriteMmapHeader(mapId, (uint)tiles.Count, maxAdtX, maxAdtY);
+        WriteMmapHeader(mapId, (uint)allTiles.Count, maxAdtX, maxAdtY);
 
         int successCount = 0;
 
@@ -815,7 +816,7 @@ public sealed class MmapExtractorService
                                 }
                             }
                         }
-                        if (isCenterChunk && centerRoadMask != null)
+                        if (isCenterChunk && centerRoadMask != null && areaType == 1)
                         {
                             int roadByte = chunkMaskByteBase + (holeBit >> 3);
                             int roadBit  = holeBit & 7;
