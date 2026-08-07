@@ -14,21 +14,7 @@
 extern "C"
 {
 
-// ---------------------------------------------------------------------------
-// BuildTile — tiled Recast build matching MapBuilder.cpp VERTEX_PER_TILE=80.
-//
-// Each sub-tile bbox is subdivided into 80-cell mini-tiles, each processed
-// through the full Recast pipeline independently, then all poly meshes are
-// merged with rcMergePolyMeshes before creating the single Detour tile.
-//
-// This mirrors the old C++ MapBuilder pipeline exactly:
-//   VERTEX_PER_TILE = 80, TILES_PER_MAP = 1760/80 = 22 per ADT
-//   → per sub-tile (1/4 ADT): 440/80 ≈ 5-6 mini-tiles per side
-//   → same minRegionArea, mergeRegionArea, maxSimplificationError
-//   → RC_CONTOUR_TESS_WALL_EDGES, maxEdgeLen = MINI_TILE_SIZE+1
-// ---------------------------------------------------------------------------
-
-static const int MINI_TILE_SIZE     = 80;           // cells per mini-tile side (= MapBuilder.cpp VERTEX_PER_TILE)
+static const int MINI_TILE_SIZE     = 448;
 static const int MINI_TILE_EDGE_LEN = MINI_TILE_SIZE + 1;  // maxEdgeLen = tileSize+1, effectively uncapped within tile
 
 int BuildTileDetailed(
@@ -77,8 +63,12 @@ int BuildTileDetailed(
     if (nTilesX < 1) nTilesX = 1;
     if (nTilesZ < 1) nTilesZ = 1;
 
-    const float detailSampleDist     = cs * 16.f;
-    const float detailSampleMaxError = ch * 1.f;
+    const float detailSampleDist     = params->DetailSampleDist > 0.f
+                                     ? params->DetailSampleDist
+                                     : cs * 16.f;
+    const float detailSampleMaxError = params->DetailSampleMaxError > 0.f
+                                     ? params->DetailSampleMaxError
+                                     : ch * 1.f;
     const float maxSimplError = params->MaxSimplificationError > 0.f ? params->MaxSimplificationError : 8.f;
     const int   nvp           = params->MaxVertsPerPoly > 0 ? params->MaxVertsPerPoly : 6;
 
@@ -311,10 +301,16 @@ int BuildTileDetailed(
     memcpy(navParams.bmax, pmesh->bmax, sizeof(float) * 3);
     navParams.cs              = pmesh->cs;
     navParams.ch              = pmesh->ch;
-    navParams.walkableHeight  = params->WalkableHeight * params->CellHeight;
-    navParams.walkableRadius  = 0.400f;
-    navParams.walkableClimb   = params->WalkableClimb * params->CellHeight;
-    navParams.buildBvTree     = true;
+    navParams.walkableHeight  = params->WalkableHeightWorld > 0.0f
+                              ? params->WalkableHeightWorld
+                              : params->WalkableHeight * params->CellHeight;
+    navParams.walkableRadius  = params->WalkableRadiusWorld > 0.0f
+                              ? params->WalkableRadiusWorld
+                              : 0.400f;
+    navParams.walkableClimb   = params->WalkableClimbWorld > 0.0f
+                              ? params->WalkableClimbWorld
+                              : params->WalkableClimb * params->CellHeight;
+    navParams.buildBvTree     = params->BuildBvTree != 0;
 
     std::vector<unsigned int> offMeshUserIds;
     if (offMeshConCount > 0 && offMeshConVerts && offMeshConRads && offMeshConDirs && offMeshConAreas && offMeshConFlags)

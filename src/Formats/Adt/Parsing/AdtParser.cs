@@ -706,16 +706,15 @@ public sealed class AdtParser
             return null;
 
         // Type from MCNK.flags bits 2,3,4 (System.cpp lignes 862-877)
-        //   bit 2 → water  (entry=1, MAP_LIQUID_TYPE_WATER  = 0x08)
+        //   bit 2 → water  (entry=1, MAP_LIQUID_TYPE_WATER  = 0x01)
         //   bit 3 → ocean  (entry=2, MAP_LIQUID_TYPE_OCEAN  = 0x02)
-        //   bit 4 → magma  (entry=3, MAP_LIQUID_TYPE_MAGMA  = 0x01)
-        // NB: valeurs C++ directes — PAS l'enum C# (qui a Water=0x01, Magma=0x04)
+        //   bit 4 → magma  (entry=3, MAP_LIQUID_TYPE_MAGMA  = 0x04)
         uint cFlag = header.Flags;
         ushort rawTypeId;
         byte typeFlags;
-        if ((cFlag & (1u << 4)) != 0)      { rawTypeId = 3; typeFlags = 0x01; } // MAGMA
+        if ((cFlag & (1u << 4)) != 0)      { rawTypeId = 3; typeFlags = 0x04; } // MAGMA
         else if ((cFlag & (1u << 3)) != 0) { rawTypeId = 2; typeFlags = 0x02; } // OCEAN
-        else if ((cFlag & (1u << 2)) != 0) { rawTypeId = 1; typeFlags = 0x08; } // WATER
+        else if ((cFlag & (1u << 2)) != 0) { rawTypeId = 1; typeFlags = 0x01; } // WATER
         else return null; // flags sans bit 2/3/4 → pas de liquide valide
 
         if (hasDarkWater && typeFlags == 0x02) // OCEAN

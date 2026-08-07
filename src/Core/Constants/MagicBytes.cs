@@ -27,7 +27,7 @@ public static class MagicBytes
     public const uint MmapWatermark = 0xA3F8C1D7u;  // MaNGOS C++ MMAP_WATERMARK
     public const uint MmapMagic = MmapTileMagic;
     public const uint MmapVersion = 4;
-    public const uint MmapMultiTileVersion = 5;
+    public const uint MmapMultiTileVersion = 6;
     public const uint DtNavMeshVersion = 7;
     public const uint Main = 0x4E49414D;          // "MAIN" LE
     public const uint Mamp = 0x504D414D;          // "MAMP" LE

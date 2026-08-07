@@ -33,6 +33,14 @@ struct RecastBuildParams
 
     int   MaxVertsPerPoly;
     int   BorderSize;  // cells; expand bbox by BorderSize*cs on each XZ side, pass to rcBuildRegions
+
+    float WalkableHeightWorld;
+    float WalkableRadiusWorld;
+    float WalkableClimbWorld;
+    int   BuildBvTree;
+
+    float DetailSampleDist;
+    float DetailSampleMaxError;
 };
 
 enum RecastBuildResult

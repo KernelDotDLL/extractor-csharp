@@ -733,6 +733,37 @@ public sealed class MmapExtractorService
 
                 byte chunkAreaType = adt.GetChunkAreaType(chunkIdx);
                 var liquid = adt.GetLiquidData(chunkIdx);
+
+                int liquidV9Base = -1;
+                int liquidV8Base = -1;
+                if (liquid.HasLiquid)
+                {
+                    liquidV9Base = vertices.Count / 3;
+                    for (int z = 0; z < 9; z++)
+                    {
+                        for (int x = 0; x < 9; x++)
+                        {
+                            vertices.Add(chunkOriginX - x * v9Step);
+                            vertices.Add(LiquidCornerHeight(in liquid, z, x));
+                            vertices.Add(chunkOriginZ - z * v9Step);
+                        }
+                    }
+
+                    liquidV8Base = vertices.Count / 3;
+                    for (int z = 0; z < 8; z++)
+                    {
+                        for (int x = 0; x < 8; x++)
+                        {
+                            float h = 0.25f * (LiquidCornerHeight(in liquid, z, x)
+                                             + LiquidCornerHeight(in liquid, z, x + 1)
+                                             + LiquidCornerHeight(in liquid, z + 1, x)
+                                             + LiquidCornerHeight(in liquid, z + 1, x + 1));
+                            vertices.Add(chunkOriginX - (x + 0.5f) * v9Step);
+                            vertices.Add(h);
+                            vertices.Add(chunkOriginZ - (z + 0.5f) * v9Step);
+                        }
+                    }
+                }
                 // Per-sub-triangle road lookup. The road mask is 4×4 sub-zones
                 // per chunk packed into 16 bits (2 bytes) — same bit layout as
                 // the MCNK holes bitmask below. A sub-triangle (z, x) belongs
@@ -770,6 +801,7 @@ public sealed class MmapExtractorService
                         // the bot path along the center of a road strip
                         // instead of the entire chunk (33.33 yards wide).
                         byte areaType = 1;
+                        bool liquidHere = false;
                         if (liquid.HasLiquid)
                         {
                             int localZ = z - liquid.OffsetY;
@@ -812,11 +844,11 @@ public sealed class MmapExtractorService
                                     }
 
                                     if (minTLevel <= maxLLevel)
-                                        areaType = baseAreaType;
+                                        liquidHere = true;
                                 }
                             }
                         }
-                        if (isCenterChunk && centerRoadMask != null && areaType == 1)
+                        if (isCenterChunk && centerRoadMask != null && areaType == 1 && !liquidHere)
                         {
                             int roadByte = chunkMaskByteBase + (holeBit >> 3);
                             int roadBit  = holeBit & 7;
@@ -837,6 +869,23 @@ public sealed class MmapExtractorService
 
                         areas.Add(areaType); areas.Add(areaType);
                         areas.Add(areaType); areas.Add(areaType);
+
+                        if (liquidHere && liquidV9Base >= 0)
+                        {
+                            int l9_00 = liquidV9Base + z * 9 + x;
+                            int l9_01 = liquidV9Base + z * 9 + x + 1;
+                            int l9_10 = liquidV9Base + (z + 1) * 9 + x;
+                            int l9_11 = liquidV9Base + (z + 1) * 9 + x + 1;
+                            int l8c = liquidV8Base + z * 8 + x;
+
+                            indices.Add(l9_00); indices.Add(l8c); indices.Add(l9_01);
+                            indices.Add(l9_01); indices.Add(l8c); indices.Add(l9_11);
+                            indices.Add(l9_11); indices.Add(l8c); indices.Add(l9_10);
+                            indices.Add(l9_10); indices.Add(l8c); indices.Add(l9_00);
+
+                            areas.Add(baseAreaType); areas.Add(baseAreaType);
+                            areas.Add(baseAreaType); areas.Add(baseAreaType);
+                        }
                     }
                 }
                 vertexOffset = vertices.Count / 3;
@@ -1061,7 +1110,9 @@ public sealed class MmapExtractorService
             WalkableHeightWorld = 2.22155f,
             WalkableRadiusWorld = 0.4f,
             WalkableClimbWorld  = 1.0f,
-            BuildBvTree         = 1
+            BuildBvTree         = 1,
+            DetailSampleDist     = _recastConfig.CellSize * 16f,
+            DetailSampleMaxError = _recastConfig.CellHeight * 1f
         };
 
         // Expand the bounding box by BorderSize * CellSize on each XZ side so that
@@ -1210,6 +1261,23 @@ public sealed class MmapExtractorService
     }
 
     internal void ClearCache() => _adtParser.ClearCache();
+
+    private const float LiquidSurfaceOffset = 2.0f;
+
+    private static float LiquidCornerHeight(in LiquidData liquid, int z, int x)
+    {
+        int lz = z - liquid.OffsetY;
+        int lx = x - liquid.OffsetX;
+        if (liquid.DepthMap != null
+            && lz >= 0 && lz <= liquid.Height
+            && lx >= 0 && lx <= liquid.Width)
+        {
+            int idx = lz * (liquid.Width + 1) + lx;
+            if (idx >= 0 && idx < liquid.DepthMap.Length)
+                return liquid.DepthMap[idx] - LiquidSurfaceOffset;
+        }
+        return liquid.LiquidLevel - LiquidSurfaceOffset;
+    }
 
     /// <summary>
     /// Auto-search for known-physical-displayids.json if no explicit path was

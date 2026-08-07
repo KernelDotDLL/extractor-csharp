@@ -21,8 +21,8 @@ public sealed class RoadExtractorService
 
     private static readonly string[] RoadPatterns =
     {
-        "road", "cobblestone", "path_cobble", "path_stone",
-        "dirtpath", "dirt_path", "bridgefloor", "bridge_stone"
+        "road", "cobblestone", "path", "footprint",
+        "bridgefloor", "bridge_stone"
     };
 
     public RoadExtractorService(
@@ -85,6 +85,7 @@ public sealed class RoadExtractorService
         _logger.LogInformation("[Road] Extraction complete for {MapName}: {Success} OK, {Failed} failed. " +
             "Road chunks: {RoadChunks}/{TotalChunks}",
             mapName, successCount, failCount, totalRoadChunks, totalChunks);
+
         return successCount;
     }
 
@@ -122,6 +123,7 @@ public sealed class RoadExtractorService
         if (roadBits > 0)
             _logger.LogInformation("[Road] ADT ({TileX},{TileY}): {RoadBits}/4096 road sub-zones detected",
                 tileX, tileY, roadBits);
+
 
         try
         {
@@ -258,18 +260,54 @@ public sealed class RoadExtractorService
                                    && IsRoadTexture(texNames[(int)layerTexIdx[l]]);
             }
 
-            // MCLY flags (WotLK MCNK::Layers):
-            //   0x001 FLAG_ANIM             — animated texture
-            //   0x002 FLAG_USE_ALPHA         — layer uses an alpha map
-            //   0x004 FLAG_ALPHA_COMPRESSED  — alpha is 4×4 instead of 8×8
-            //   0x008 FLAG_CAST_SHADOWS      — layer casts shadows (irrelevant here)
-            //
-            // The "over" bit (0x002) is the FLAG_USE_ALPHA bit in WotLK
-            // format — some docs name it 0x002, some 0x004. The WoWDev wiki
-            // and MaNGOS use 0x004. We use 0x004.
-            const uint FLAG_USE_ALPHA = 0x004u;
-            const uint FLAG_ALPHA_COMPRESSED = 0x008u;
+            // MCLY flags (WotLK MCNK::Layers): 0x100 use_alpha_map, 0x200 alpha_map_compressed
+            const uint FLAG_USE_ALPHA = 0x100u;
+            const uint FLAG_ALPHA_COMPRESSED = 0x200u;
             const int ALPHA_THRESHOLD = 128; // 0-255; above this = layer is "visible" at that sub-zone
+
+            // MCAL: one 64x64 alpha map per non-base layer, reduced here to the 4x4 sub-zones.
+            uint mcnkOfsAlpha  = BitConverter.ToUInt32(data.Slice((int)mcnkOff + 8 + 0x24, 4));
+            uint mcnkSizeAlpha = BitConverter.ToUInt32(data.Slice((int)mcnkOff + 8 + 0x28, 4));
+            long mcalData = (long)mcnkOff + mcnkOfsAlpha + 8;
+            long mcalEnd  = mcalData + (mcnkSizeAlpha >= 8 ? mcnkSizeAlpha - 8 : 0);
+            if (mcalEnd > data.Length) mcalEnd = data.Length;
+
+            byte[][] layerSubZoneAlpha = new byte[numLayers][];
+            for (int l = 0; l < numLayers; ++l)
+            {
+                if (l == 0 || (layerFlags[l] & FLAG_USE_ALPHA) == 0)
+                    continue; // base layer, or no alpha map: opaque everywhere
+
+                long start = mcalData + layerOfsAlpha[l];
+                if (start < 0 || start >= mcalEnd)
+                    continue;
+
+                long avail = mcalEnd - start;
+                for (int n = 0; n < numLayers; ++n)
+                {
+                    if (n == l || (layerFlags[n] & FLAG_USE_ALPHA) == 0) continue;
+                    long other = mcalData + layerOfsAlpha[n];
+                    if (other > start && other - start < avail) avail = other - start;
+                }
+
+                byte[]? full = DecodeAlphaMap(data, start, avail,
+                    (layerFlags[l] & FLAG_ALPHA_COMPRESSED) != 0);
+                if (full == null)
+                    continue;
+
+                byte[] sub = new byte[16];
+                for (int szi = 0; szi < 16; ++szi)
+                {
+                    int by = (szi / 4) * 16;
+                    int bx = (szi % 4) * 16;
+                    int sum = 0;
+                    for (int yy = 0; yy < 16; ++yy)
+                        for (int xx = 0; xx < 16; ++xx)
+                            sum += full[(by + yy) * 64 + (bx + xx)];
+                    sub[szi] = (byte)(sum / 256);
+                }
+                layerSubZoneAlpha[l] = sub;
+            }
 
             // 4×4 sub-zones per chunk. 16 sub-zones × 256 chunks = 4096 bits.
             // Each sub-zone covers a 2×2 quad of the 8×8 sub-triangle grid.
@@ -291,40 +329,8 @@ public sealed class RoadExtractorService
                 int topmostLayer = -1;
                 for (int l = numLayers - 1; l >= 0; --l)
                 {
-                    int opacity;
-                    if ((layerFlags[l] & FLAG_USE_ALPHA) != 0)
-                    {
-                        // Alpha data offset is from MCNK magic. 16 bytes if
-                        // compressed (4×4), 64 bytes if uncompressed (8×8).
-                        // We only need the 4×4 value at (subZoneY, subZoneX),
-                        // so a compressed map is direct; an 8×8 map needs to
-                        // be downsampled by averaging the 2×2 sub-triangles
-                        // that share this sub-zone.
-                        long alphaAbs = (long)mcnkOff + layerOfsAlpha[l];
-                        if (alphaAbs < 0 || alphaAbs + 16 > data.Length)
-                        {
-                            opacity = 0; // bad offset → treat as transparent
-                        }
-                        else if ((layerFlags[l] & FLAG_ALPHA_COMPRESSED) != 0)
-                        {
-                            // 4×4 = 16 values, row-major
-                            opacity = data[(int)alphaAbs + subZoneY * 4 + subZoneX];
-                        }
-                        else
-                        {
-                            // 8×8 = 64 values, row-major
-                            int a00 = data[(int)alphaAbs + (subZoneY * 2 + 0) * 8 + (subZoneX * 2 + 0)];
-                            int a01 = data[(int)alphaAbs + (subZoneY * 2 + 0) * 8 + (subZoneX * 2 + 1)];
-                            int a10 = data[(int)alphaAbs + (subZoneY * 2 + 1) * 8 + (subZoneX * 2 + 0)];
-                            int a11 = data[(int)alphaAbs + (subZoneY * 2 + 1) * 8 + (subZoneX * 2 + 1)];
-                            opacity = (a00 + a01 + a10 + a11 + 2) / 4; // +2 for round-to-nearest
-                        }
-                    }
-                    else
-                    {
-                        // No alpha map → layer is opaque everywhere
-                        opacity = 255;
-                    }
+                    byte[] szAlpha = layerSubZoneAlpha[l];
+                    int opacity = szAlpha != null ? szAlpha[sz] : 255;
 
                     if (opacity > ALPHA_THRESHOLD)
                     {
@@ -343,6 +349,58 @@ public sealed class RoadExtractorService
         }
 
         return anyRoad;
+    }
+
+    /// <summary>
+    /// Decodes one MCAL alpha map into a 64x64 byte grid: RLE-compressed, 4096 raw
+    /// bytes, or 2048 bytes of 4-bit pairs. Null when the source is too short.
+    /// </summary>
+    private static byte[]? DecodeAlphaMap(ReadOnlySpan<byte> data, long start, long avail, bool compressed)
+    {
+        var outBuf = new byte[4096];
+
+        if (compressed)
+        {
+            long i = start;
+            long end = start + avail;
+            int o = 0;
+            while (o < 4096 && i < end)
+            {
+                byte ctrl = data[(int)i++];
+                int n = ctrl & 0x7F;
+                if (n == 0) break;
+                if ((ctrl & 0x80) != 0)
+                {
+                    if (i >= end) break;
+                    byte v = data[(int)i++];
+                    while (n-- > 0 && o < 4096) outBuf[o++] = v;
+                }
+                else
+                {
+                    while (n-- > 0 && o < 4096 && i < end) outBuf[o++] = data[(int)i++];
+                }
+            }
+            return o == 0 ? null : outBuf;
+        }
+
+        if (avail >= 4096)
+        {
+            for (int k = 0; k < 4096; k++) outBuf[k] = data[(int)(start + k)];
+            return outBuf;
+        }
+
+        if (avail >= 2048)
+        {
+            for (int k = 0; k < 2048; k++)
+            {
+                byte b = data[(int)(start + k)];
+                outBuf[k * 2]     = (byte)((b & 0x0F) * 17);
+                outBuf[k * 2 + 1] = (byte)((b >> 4) * 17);
+            }
+            return outBuf;
+        }
+
+        return null;
     }
 
     private static bool IsRoadTexture(string textureName)

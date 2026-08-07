@@ -286,10 +286,26 @@ struct RecastBuildParams {
     float MaxSimplificationError;
     int   MaxVertsPerPoly;
     int   BorderSize;
+
+    float WalkableHeightWorld;
+    float WalkableRadiusWorld;
+    float WalkableClimbWorld;
+    int   BuildBvTree;
+
+    float DetailSampleDist;
+    float DetailSampleMaxError;
 };
 ```
 
-The default values used by the extractor are identical to HonorBuddy's — see the table below.
+`DetailSampleDist` / `DetailSampleMaxError` drive `rcBuildPolyMeshDetail`, i.e. how
+finely terrain height is resolved inside each polygon. Both fall back to the DLL
+defaults (`cs*16` and `ch*1`) when left at 0.
+
+The `WalkableXxxWorld` fields carry the world-unit values written into the `dtMeshHeader` of
+every tile and read back by Detour at query time. They are independent of the cell-based
+`WalkableHeight` / `WalkableRadius` / `WalkableClimb` above, which drive voxel
+rasterization only. When a world-unit field is left at 0 the DLL falls back to
+`cells * CellHeight` (and `0.400f` for the radius).
 
 ---
 

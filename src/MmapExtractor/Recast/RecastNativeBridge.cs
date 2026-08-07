@@ -98,12 +98,14 @@ public struct RecastBuildParams
 
     // ---- World-unit Detour params (Mangos C++ hardcodes 2.22155 / 0.4 / 1.0) ----
     // Stored in the Detour tile header and used by pathfinding queries.
-    // Per-map overrides (e.g. map 562 walkableRadius=0) are applied in C# before
-    // the call.
+    // The DLL treats 0 as "unset" and falls back to its own default.
     public float WalkableHeightWorld;
     public float WalkableRadiusWorld;
     public float WalkableClimbWorld;
 
     /// <summary>1 = build BVH (Mangos default), 0 = skip.</summary>
     public int BuildBvTree;
+
+    public float DetailSampleDist;
+    public float DetailSampleMaxError;
 }

@@ -34,6 +34,26 @@
     {
       "displayId": 5971,
       "comment": "Mailbox (PostBoxTroll)"
+    },
+    {
+      "displayId": 374,
+      "entry": 172953,
+      "comment": "Mighty Blaze (Orgrimmar brazier) - type 8, needs entry 172953 in MUST_INCLUDE_ENTRIES of write_gameobject_spawns_bin_v2.py"
+    },
+    {
+      "displayId": 373,
+      "entry": 172945,
+      "comment": "Mighty Blaze (Orgrimmar brazier, small) - type 8, needs entry 172945 in MUST_INCLUDE_ENTRIES of write_gameobject_spawns_bin_v2.py"
+    },
+    {
+      "displayId": 710,
+      "entry": 173017,
+      "comment": "Gotri's Travelling Gear (Orgrimmar vendor stall) - type 5"
+    },
+    {
+      "displayId": 712,
+      "entry": 173018,
+      "comment": "Magar's Cloth Goods (Orgrimmar vendor stall) - type 5"
     }
   ]
 }

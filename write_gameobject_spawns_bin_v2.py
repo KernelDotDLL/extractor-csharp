@@ -42,7 +42,11 @@ IDENTITY_QUAT = (0.0, 0.0, 0.0, 1.0)
 # EXCLUDED_TYPES list (or if they have no matching template row). Useful to
 # guarantee seasonal decorations, custom props, or test objects are always
 # present in the .bin.
-MUST_INCLUDE_ENTRIES: set[int] = set()
+MUST_INCLUDE_ENTRIES: set[int] = {
+    172945,  # Mighty Blaze (Orgrimmar brazier, small) - type 8 SPELL_FOCUS, filtered by the type exclusion
+    172952,  # Mighty Blaze (Orgrimmar brazier) - type 8 SPELL_FOCUS, same displayId 374 as 172953
+    172953,  # Mighty Blaze (Orgrimmar brazier) - type 8 SPELL_FOCUS, filtered by the type exclusion
+}
 # Examples (commented out — uncomment to enable):
 # MUST_INCLUDE_ENTRIES = {
 #     188215,  # Collision PC Size (uses 3D models stacked at different Z — trees/decor)
