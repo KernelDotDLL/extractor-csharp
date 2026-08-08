@@ -15,6 +15,21 @@ public static class WowConstants
     /// <summary>Size of one MCNK chunk in world units.</summary>
     public const float ChunkSize = TileSize / ChunksPerTile;
 
+    /// <summary>
+    /// Spacing of the WMO liquid grid in world units (MaNGOS GRID_PART_SIZE =
+    /// GRID_SIZE / 128). One MLIQ tile covers this much ground on each axis.
+    /// </summary>
+    public const float GridPartSize = TileSize / 128f;
+
+    /// <summary>
+    /// How far below the real liquid surface the navmesh water sheet is placed,
+    /// in world units. The runtime navigator adds this back when it follows a
+    /// water or lava waypoint, so both liquid sources — the ADT MH2O grid and
+    /// the WMO MLIQ grid — must sink their vertices by the same amount or the
+    /// two sheets end up at different heights in the same map.
+    /// </summary>
+    public const float LiquidSurfaceOffset = 2.0f;
+
     /// <summary>Half-width of the entire world in world units (32 tiles).</summary>
     public const float MapHalfSize = 17066.666f;
 
@@ -79,12 +94,20 @@ public static class WowConstants
 
     // MAP DIRECTORY NAMES
 
-    /// <summary>Converts a map ID to its directory name.</summary>
+    /// <summary>
+    /// Last-resort map directory name, used only when Map.dbc cannot be read.
+    /// Prefer <c>MapDirectoryResolver</c>, which reads the real directory from
+    /// the client: this list covers the four continents and nothing else, and
+    /// the <c>Map{id:D4}</c> fallback it returns for every instance does not
+    /// exist in the client data.
+    /// </summary>
     public static string GetMapDirectory(uint mapId) => mapId switch
     {
         0 => "Azeroth",
         1 => "Kalimdor",
-        530 => "Outland",
+        // Map.dbc field 1 for Outland is "Expansion01" — "Outland" is the
+        // display name and never matches a directory on disk.
+        530 => "Expansion01",
         571 => "Northrend",
         _ => $"Map{mapId:D4}"
     };

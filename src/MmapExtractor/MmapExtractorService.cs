@@ -41,6 +41,7 @@ public sealed class MmapExtractorService
     private readonly string? _vmapDir;  // directory containing vmaps/MapName/ (output of vmap-extractor)
     private readonly string? _mapsDir;  // directory containing maps/{id:D3}{y:D2}{x:D2}.map (output of map-extractor)
     private readonly bool _usesLiquids;
+    private readonly TileResolutionTable _tileResolutions;
 
     // --- Spatial filtering toggle (optimisation: reduce triCount per BuildTile call) ---
     // When true, each sub-tile receives only the triangles whose AABB overlaps the
@@ -72,7 +73,8 @@ public sealed class MmapExtractorService
         string? vmapDir = null,
         string? mapsDir = null,
         bool usesLiquids = true,
-        string? displayIdsPath = null)
+        string? displayIdsPath = null,
+        string? tileResolutionsPath = null)
     {
         _archive = archive;
         _logger = loggerFactory.CreateLogger<MmapExtractorService>();
@@ -88,6 +90,13 @@ public sealed class MmapExtractorService
         _vmapDir = vmapDir;
         _mapsDir = mapsDir;
         _usesLiquids = usesLiquids;
+
+        // The default resolution is whatever the configured cell size implies,
+        // so a table entry equal to it costs nothing and changes nothing.
+        int defaultResolution = recastConfig.CellSize > 0f
+            ? (int)MathF.Round(WowConstants.TileSize / recastConfig.CellSize)
+            : 0;
+        _tileResolutions = TileResolutionTable.Load(tileResolutionsPath, defaultResolution, _logger);
 
         // --- Load physical-displayId whitelist (defaults + JSON overrides). ---
         // Hardcoded defaults in KnownPhysicalDisplayIds.cs are always loaded;
@@ -392,7 +401,7 @@ public sealed class MmapExtractorService
             float bminX = (31 - tileX) * WowConstants.TileSize;
             float bminZ = (31 - tileY) * WowConstants.TileSize;
 
-            var subTiles = BuildNavMeshSubTilesSync(mapId, geometry, tileX, tileY, maxAdtX, maxAdtY, bminX, bminZ, ct);
+            var subTiles = BuildNavMeshSubTilesSync(mapId, mapName, geometry, tileX, tileY, maxAdtX, maxAdtY, bminX, bminZ, ct);
             var failedSubTiles = subTiles.Where(r => r.IsFailure).ToArray();
             if (failedSubTiles.Length > 0)
             {
@@ -896,9 +905,20 @@ public sealed class MmapExtractorService
     }
 
     private BuildSubTileResult[] BuildNavMeshSubTilesSync(
-        uint mapId, TileGeometry geo, int adtX, int adtY, int maxAdtX, int maxAdtY,
+        uint mapId, string mapName, TileGeometry geo, int adtX, int adtY, int maxAdtX, int maxAdtY,
         float adtMinX, float adtMinZ, CancellationToken ct = default)
     {
+        // Resolution is chosen per ADT tile, never per sub-tile: the whole ADT
+        // must rasterize on one grid or the sub-tile borders stop lining up.
+        float cellSize = _tileResolutions.GetCellSize(mapName, adtX, adtY, _recastConfig.CellSize);
+        if (cellSize != _recastConfig.CellSize)
+        {
+            _logger.LogInformation(
+                "[Mmap] {MapName} ({AX},{AY}): cellSize {CS:F6} (resolution {Res}) instead of the default {Def:F6}",
+                mapName, adtX, adtY, cellSize,
+                _tileResolutions.GetResolution(mapName, adtX, adtY), _recastConfig.CellSize);
+        }
+
         // Filter offmesh connections for this ADT tile once — same as C++ loadOffMeshConnections(mapID, tileX, tileY)
         var tileConns = _offMeshConnections
             .Where(c => c.MapId == (int)mapId && c.TileX == adtX && c.TileY == adtY)
@@ -929,7 +949,7 @@ public sealed class MmapExtractorService
         // borderMeters computed inside BuildNavMeshTileSync, so the filter bbox is a safe
         // superset of the triangles Recast would actually use.
         int borderSize = Math.Max(7, _recastConfig.WalkableRadius + 3);
-        float borderMeters = borderSize * _recastConfig.CellSize;
+        float borderMeters = borderSize * cellSize;
 
         // Sub-tiles are built sequentially within each ADT worker.
         // Parallelism is controlled at the outer tile level (Parallel.ForEachAsync);
@@ -983,7 +1003,8 @@ public sealed class MmapExtractorService
                 geo, trisUsed, areasUsed, triCountUsed,
                 detourTileX, detourTileY,
                 minX, minZ, maxX, maxZ,
-                omVerts, omRads, omDirs, omAreas, omFlags);
+                omVerts, omRads, omDirs, omAreas, omFlags,
+                cellSize);
         }
 
         return subTiles;
@@ -1070,7 +1091,8 @@ public sealed class MmapExtractorService
         TileGeometry geo, int[] tris, byte[] areas, int triCount,
         int adtX, int adtY,
         float minX, float minZ, float maxX, float maxZ,
-        float[] omVerts, float[] omRads, byte[] omDirs, byte[] omAreas, ushort[] omFlags)
+        float[] omVerts, float[] omRads, byte[] omDirs, byte[] omAreas, ushort[] omFlags,
+        float cellSize)
     {
         // vertCount is the ORIGINAL vertex count — the (possibly filtered) tris array
         // still indexes into geo.Vertices, so the DLL sees the full vertex range even
@@ -1081,7 +1103,7 @@ public sealed class MmapExtractorService
 
         var p = new RecastBuildParams
         {
-            CellSize = _recastConfig.CellSize,
+            CellSize = cellSize,
             CellHeight = _recastConfig.CellHeight,
             WalkableSlopeAngle = _recastConfig.WalkableSlopeAngle,
             WalkableHeight = _recastConfig.WalkableHeight,
@@ -1111,14 +1133,14 @@ public sealed class MmapExtractorService
             WalkableRadiusWorld = 0.4f,
             WalkableClimbWorld  = 1.0f,
             BuildBvTree         = 1,
-            DetailSampleDist     = _recastConfig.CellSize * 16f,
+            DetailSampleDist     = cellSize * 16f,
             DetailSampleMaxError = _recastConfig.CellHeight * 1f
         };
 
         // Expand the bounding box by BorderSize * CellSize on each XZ side so that
         // neighboring geometry is rasterized — this ensures polygon edges reach the
         // tile boundary and Detour can form portal links between adjacent sub-tiles.
-        float borderMeters = p.BorderSize * _recastConfig.CellSize;
+        float borderMeters = p.BorderSize * cellSize;
         float expandedMinX = minX - borderMeters;
         float expandedMaxX = maxX + borderMeters;
         float expandedMinZ = minZ - borderMeters;
@@ -1262,7 +1284,7 @@ public sealed class MmapExtractorService
 
     internal void ClearCache() => _adtParser.ClearCache();
 
-    private const float LiquidSurfaceOffset = 2.0f;
+    private const float LiquidSurfaceOffset = WowConstants.LiquidSurfaceOffset;
 
     private static float LiquidCornerHeight(in LiquidData liquid, int z, int x)
     {

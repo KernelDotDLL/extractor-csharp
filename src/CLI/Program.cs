@@ -3,6 +3,7 @@ using System.IO;
 using MaNGOS.Extractor.Core.Constants;
 using MaNGOS.Extractor.Core.Models;
 using MaNGOS.Extractor.DbcExtractor;
+using MaNGOS.Extractor.Formats.Dbc;
 using MaNGOS.Extractor.Formats.Mpq;
 using MaNGOS.Extractor.MapExtractor;
 using MaNGOS.Extractor.MmapExtractor;
@@ -60,6 +61,11 @@ public static class Program
         var ct = CancellationToken.None;
         int processed = 0;
 
+        // Map directories come from Map.dbc, the same source the UI uses. The
+        // built-in list knows four continents and misnames one of them, so any
+        // instance run from the CLI would look for a WDT that does not exist.
+        var mapDirectories = MapDirectoryResolver.Load(archives, _loggerFactory.CreateLogger("MapDirectories"));
+
         // Single vmap service for the whole phase — the dedup HashSet of
         // .vmo/.vmd files (already written during per-map MDDF/MODF
         // processing) is shared with the global GameObjectDisplayInfo pass.
@@ -92,7 +98,7 @@ public static class Program
         foreach (var mid in options.MapIds)
         {
             uint mapId = (uint)mid;
-            string mapName = WowConstants.GetMapDirectory(mapId);
+            string mapName = mapDirectories.GetDirectory(mapId);
             Console.WriteLine();
             Console.WriteLine($"=== Processing map {mapId} ({mapName}) ===");
 
@@ -160,7 +166,8 @@ public static class Program
                 var svc = new MmapExtractorService(archives, _loggerFactory, mmapDir,
                     recast, options.Threads, options.GoSpawnsPath, offMeshPath: options.OffMeshPath,
                     roadMapsDir: roadDir, vmapDir: vmapDir, mapsDir: mapsDir,
-                    displayIdsPath: options.DisplayIdsPath);
+                    displayIdsPath: options.DisplayIdsPath,
+                    tileResolutionsPath: options.TileResolutionsPath);
                 int tiles = await svc.ExtractMapAsync(mapId, mapName, progress, ct, options.TileX, options.TileY);
                 Console.WriteLine($"  [Mmap] {tiles} tiles extracted.");
                 processed += tiles;
@@ -253,6 +260,10 @@ public static class Program
                     if (++i >= args.Length) return BadArg("--displayids requires a value");
                     opts.DisplayIdsPath = args[i];
                     break;
+                case "--tile-resolutions":
+                    if (++i >= args.Length) return BadArg("--tile-resolutions requires a value");
+                    opts.TileResolutionsPath = args[i];
+                    break;
                 default:
                     return BadArg(args[i]);
             }
@@ -290,6 +301,7 @@ public static class Program
         Console.WriteLine("  --gospawns <path>   gameobject_spawns.bin path (default: gameobject_spawns.bin)");
         Console.WriteLine("  --offmesh <path>    OffMesh connections file (offmesh.txt format)");
         Console.WriteLine("  --displayids <path> known-physical-displayids.json path (extends the hardcoded whitelist at runtime)");
+        Console.WriteLine("  --tile-resolutions <path>  Per-ADT-tile resolution table (\"MapDirectory_x_y:cells\" per line)");
         Console.WriteLine("  --no-spatial-filter Disable per-sub-tile triangle spatial pre-filtering");
     }
 
@@ -311,6 +323,11 @@ public static class Program
         /// is found anywhere, the whitelist stays empty.
         /// </summary>
         public string? DisplayIdsPath { get; set; }
+        /// <summary>
+        /// Path to a per-ADT-tile resolution table ("MapDirectory_x_y:cells" per
+        /// line). Optional — without it every tile uses the configured cell size.
+        /// </summary>
+        public string? TileResolutionsPath { get; set; }
         public bool DisableSpatialFilter { get; set; }
     }
 
