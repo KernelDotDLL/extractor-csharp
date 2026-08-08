@@ -14,8 +14,17 @@
 extern "C"
 {
 
-static const int MINI_TILE_SIZE     = 448;
-static const int MINI_TILE_EDGE_LEN = MINI_TILE_SIZE + 1;  // maxEdgeLen = tileSize+1, effectively uncapped within tile
+// Cells per mini-tile side, = MapBuilder.cpp VERTEX_PER_TILE. Each sub-tile is
+// subdivided into MINI_TILE_SIZE-cell slabs, every slab goes through the full
+// Recast pipeline on its own, and the poly meshes are merged at the end.
+//
+// This is not just a performance knob: the subdivision is what BOUNDS the
+// length of a contour edge. maxEdgeLen below is MINI_TILE_SIZE+1 cells, so at
+// cs 0.30303 a polygon edge can never exceed ~24.5 yards. Raising this to 448
+// made one slab cover the whole sub-tile, removed the bound, and produced
+// 96-yard blade polygons spanning the level — navigable, and wrong.
+static const int MINI_TILE_SIZE     = 80;
+static const int MINI_TILE_EDGE_LEN = MINI_TILE_SIZE + 1;  // maxEdgeLen, in cells
 
 int BuildTileDetailed(
     const RecastBuildParams* params,
