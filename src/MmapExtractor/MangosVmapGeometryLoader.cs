@@ -2,6 +2,7 @@ using System.IO;
 using System.Numerics;
 using Microsoft.Extensions.Logging;
 using MaNGOS.Extractor.Core.Constants;
+using MaNGOS.Extractor.Formats.Adt.Models;
 using MaNGOS.Extractor.Formats.Vmap.Mangos;
 
 namespace MaNGOS.Extractor.MmapExtractor;
@@ -37,6 +38,9 @@ internal sealed class MangosVmapGeometryLoader
     // Cache which placements were already appended to a tile — mirrors the
     // seenUniqueIds set used in the previous raw-based implementation.
     private readonly HashSet<uint> _seenPlacementIds = new();
+
+    // One warning per unmapped WMO liquid type, not one per placement.
+    private readonly HashSet<short> _unmappedLiquidTypes = new();
 
     public MangosVmapGeometryLoader(
         string vmapDir,
@@ -238,6 +242,11 @@ internal sealed class MangosVmapGeometryLoader
         for (int g = 0; g < model.Groups.Count; g++)
         {
             var grp = model.Groups[g];
+
+            // A group can carry a liquid surface without carrying a single
+            // collision triangle, so the liquid pass runs before the early-out.
+            AppendGroupLiquid(grp, rotMatrix, scale, position, outVerts, outTris, outAreas);
+
             if (grp.Vertices.Length == 0 || grp.Triangles.Length == 0) continue;
 
             int vertBase = outVerts.Count / 3;
@@ -299,5 +308,105 @@ internal sealed class MangosVmapGeometryLoader
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// Append the group's WMO liquid surface, transformed by the same
+    /// placement matrix as the collision mesh. Faithful port of the liquid
+    /// branch of MaNGOS <c>TerrainBuilder.cpp::loadVMap</c> (lines 783-862).
+    ///
+    /// The MLIQ grid is walked x-outer / y-inner, so the vertex produced for
+    /// (x, y) lands at index <c>x * vertsY + y</c>, while its height is read
+    /// at <c>y * vertsX + x</c> — the asymmetry is in the C++ and is required
+    /// for the quad indices below to line up. A quad whose flag has the low
+    /// nibble set to 0x0f is not rendered and produces no triangles.
+    /// </summary>
+    private void AppendGroupLiquid(
+        MangosVmoReader.GroupModel grp,
+        Matrix4x4 rotMatrix,
+        float scale,
+        Vector3 position,
+        List<float> outVerts,
+        List<int> outTris,
+        List<byte> outAreas)
+    {
+        var liq = grp.Liquid;
+        if (liq == null || !liq.IsUsable) return;
+
+        // The .vmo stores a LiquidType.dbc entry (see ResolveLiquidEntry in the
+        // vmap extractor). It resolves to a NavTerrain value through the same
+        // table the ADT path uses, so a WMO pool and an outdoor lake end up with
+        // the same area: water/ocean → NAV_WATER (2), magma/slime → NAV_LAVA (3).
+        // Entry 0 means the group declared a liquid grid but no liquid.
+        if (liq.Type == 0) return;
+
+        var liquidFlags = AdtFile.LiquidTypeToFlags((ushort)liq.Type);
+        byte area = liquidFlags is LiquidType.Magma or LiquidType.Slime ? (byte)3 : (byte)2;
+
+        if (!AdtFile.HasLiquidType((ushort)liq.Type) && _unmappedLiquidTypes.Add(liq.Type))
+        {
+            _logger.LogWarning(
+                "[Mmap-Vmap] WMO liquid entry {Type} has no row in LiquidType.dbc — treated as water. " +
+                "Check the resolution in ResolveLiquidEntry if this dungeon's liquid behaves oddly.",
+                liq.Type);
+        }
+
+        int tilesX = liq.TilesX;
+        int tilesY = liq.TilesY;
+        int vertsX = tilesX + 1;
+        int vertsY = tilesY + 1;
+        if (liq.Heights.Length < vertsX * vertsY) return;
+
+        int vertBase = outVerts.Count / 3;
+        for (int x = 0; x < vertsX; x++)
+        {
+            for (int y = 0; y < vertsY; y++)
+            {
+                var v = new Vector3(
+                    liq.Corner.X + x * WowConstants.GridPartSize,
+                    liq.Corner.Y + y * WowConstants.GridPartSize,
+                    liq.Heights[y * vertsX + x]);
+
+                var wv = Vector3.Transform(v, rotMatrix) * scale + position;
+                wv.X *= -1f;
+                wv.Y *= -1f;
+
+                // Same convention as the ADT liquid path: the navmesh sheet is
+                // sunk LiquidSurfaceOffset below the real surface, and
+                // MeshNavigator adds it back when it hands a water waypoint to
+                // the bot. Emitting the raw MLIQ height here would leave WMO
+                // pools two yards above every outdoor lake and two yards above
+                // what the navigator expects.
+                outVerts.Add(wv.Y);
+                outVerts.Add(wv.Z - WowConstants.LiquidSurfaceOffset);
+                outVerts.Add(wv.X);
+            }
+        }
+
+        for (int x = 0; x < tilesX; x++)
+        {
+            for (int y = 0; y < tilesY; y++)
+            {
+                if ((liq.Flags[x + y * tilesX] & 0x0f) == 0x0f) continue;
+
+                int square = x * tilesY + y;
+                int idx1 = square + x;
+                int idx2 = square + 1 + x;
+                int idx3 = square + tilesY + 1 + 1 + x;
+                int idx4 = square + tilesY + 1 + x;
+
+                // The C++ builds (idx3, idx2, idx1) then (idx4, idx3, idx1)
+                // and emits each triangle rotated by one: (t1, t2, t0).
+                outTris.Add(vertBase + idx2);
+                outTris.Add(vertBase + idx1);
+                outTris.Add(vertBase + idx3);
+                outAreas.Add(area);
+
+                outTris.Add(vertBase + idx3);
+                outTris.Add(vertBase + idx1);
+                outTris.Add(vertBase + idx4);
+                outAreas.Add(area);
+            }
+        }
     }
 }

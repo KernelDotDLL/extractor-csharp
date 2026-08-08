@@ -85,6 +85,13 @@ public sealed class AdtFile
     public static LiquidType LiquidTypeToFlags(ushort rawTypeId)
         => LiquidTypeLookup.TryGetValue(rawTypeId, out var f) ? (LiquidType)f : LiquidType.Water;
 
+    /// <summary>
+    /// True when LiquidType.dbc actually has a row for this id. Callers that
+    /// resolve a liquid id themselves use this to tell a real lookup from the
+    /// Water default <see cref="LiquidTypeToFlags"/> returns for unknown ids.
+    /// </summary>
+    public static bool HasLiquidType(ushort rawTypeId) => LiquidTypeLookup.ContainsKey(rawTypeId);
+
     private readonly float[] _heights;
     private readonly ushort[] _areaIds;
     private readonly LiquidData[] _liquids;

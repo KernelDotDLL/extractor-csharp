@@ -73,6 +73,38 @@ public static class MangosVmoReader
     }
 
     /// <summary>
+    /// WMO liquid surface for one group — the payload of the LIQU chunk.
+    /// Mirrors VMAP::WmoLiquid: a regular grid of TilesX x TilesY quads whose
+    /// corner heights live in <see cref="Heights"/> ((TilesX+1)*(TilesY+1)
+    /// floats) and whose per-quad render flags live in <see cref="Flags"/>
+    /// (TilesX*TilesY bytes). A quad with (flag &amp; 0x0f) == 0x0f is not
+    /// rendered and carries no surface.
+    ///
+    /// On-disk layout, matching the C++ WMOLiquidHeader written by
+    /// wmo.cpp::ConvertToVMAPGroupWmo and read back by WorldModel::ReadFile:
+    ///   int32 VertsX, int32 VertsY, int32 TilesX, int32 TilesY,
+    ///   float CornerX, CornerY, CornerZ, int16 Type      (30 bytes)
+    ///   float Heights[VertsX*VertsY]
+    ///   byte  Flags[TilesX*TilesY]
+    /// </summary>
+    public sealed class LiquidBlock
+    {
+        public int VertsX;
+        public int VertsY;
+        public int TilesX;
+        public int TilesY;
+        public Vector3 Corner;
+        public short Type;
+        public float[] Heights = Array.Empty<float>();
+        public byte[] Flags = Array.Empty<byte>();
+
+        public bool IsUsable =>
+            TilesX > 0 && TilesY > 0
+            && Heights.Length >= VertsX * VertsY
+            && Flags.Length >= TilesX * TilesY;
+    }
+
+    /// <summary>
     /// Compiled collision mesh for one WMO group (or M2 model — same format).
     /// </summary>
     public sealed class GroupModel
@@ -83,6 +115,7 @@ public static class MangosVmoReader
         public Vector3 BoundHi;
         public Vector3[] Vertices = Array.Empty<Vector3>();
         public MeshTriangle[] Triangles = Array.Empty<MeshTriangle>();
+        public LiquidBlock? Liquid;
     }
 
     /// <summary>
@@ -215,9 +248,47 @@ public static class MangosVmoReader
         if (!ReadChunkHeader(br, "LIQU", out uint liquSize))
             return null;
         if (liquSize > 0)
-            br.BaseStream.Seek(liquSize, SeekOrigin.Current);
+        {
+            long liquEnd = br.BaseStream.Position + liquSize;
+            grp.Liquid = ReadLiquidBlock(br, liquSize);
+            // Always land on the declared end, even when the payload is
+            // shorter/longer than the header implies — a malformed liquid
+            // block must not desync the group stream.
+            br.BaseStream.Position = liquEnd;
+        }
 
         return grp;
+    }
+
+    private static LiquidBlock? ReadLiquidBlock(BinaryReader br, uint chunkSize)
+    {
+        const int HeaderSize = 30;
+        if (chunkSize < HeaderSize) return null;
+
+        var liq = new LiquidBlock
+        {
+            VertsX = br.ReadInt32(),
+            VertsY = br.ReadInt32(),
+            TilesX = br.ReadInt32(),
+            TilesY = br.ReadInt32(),
+            Corner = new Vector3(br.ReadSingle(), br.ReadSingle(), br.ReadSingle()),
+            Type = br.ReadInt16(),
+        };
+
+        if (liq.VertsX <= 0 || liq.VertsY <= 0 || liq.TilesX <= 0 || liq.TilesY <= 0)
+            return null;
+
+        long heightBytes = (long)liq.VertsX * liq.VertsY * 4;
+        long flagBytes = (long)liq.TilesX * liq.TilesY;
+        if (HeaderSize + heightBytes + flagBytes > chunkSize)
+            return null;
+
+        liq.Heights = new float[liq.VertsX * liq.VertsY];
+        for (int i = 0; i < liq.Heights.Length; i++)
+            liq.Heights[i] = br.ReadSingle();
+
+        liq.Flags = br.ReadBytes(liq.TilesX * liq.TilesY);
+        return liq.IsUsable ? liq : null;
     }
 
     /// <summary>
@@ -406,9 +477,32 @@ public static class MangosVmoReader
         }
         mbih.WriteToFile(bw);
 
-        // LIQU chunk — no liquid (chunkSize = 0)
+        // LIQU chunk — the group's liquid surface, or chunkSize 0 when the
+        // group has none. Dropping this used to be why WMO interiors (pools,
+        // sludge basins, the Blackfathom entrance water) reached Recast with
+        // no liquid at all: the navmesh then only covered the pool floor and
+        // the bot pathed along the bottom instead of swimming across.
         bw.Write(Encoding.ASCII.GetBytes("LIQU"));
-        bw.Write((uint)0);
+        var liq = grp.Liquid;
+        if (liq == null || !liq.IsUsable)
+        {
+            bw.Write((uint)0);
+            return;
+        }
+
+        uint liquSize = (uint)(30 + liq.VertsX * liq.VertsY * 4 + liq.TilesX * liq.TilesY);
+        bw.Write(liquSize);
+        bw.Write(liq.VertsX);
+        bw.Write(liq.VertsY);
+        bw.Write(liq.TilesX);
+        bw.Write(liq.TilesY);
+        bw.Write(liq.Corner.X);
+        bw.Write(liq.Corner.Y);
+        bw.Write(liq.Corner.Z);
+        bw.Write(liq.Type);
+        for (int i = 0; i < liq.VertsX * liq.VertsY; i++)
+            bw.Write(liq.Heights[i]);
+        bw.Write(liq.Flags, 0, liq.TilesX * liq.TilesY);
     }
 
     private static void WriteEmptyBih(BinaryWriter bw)
