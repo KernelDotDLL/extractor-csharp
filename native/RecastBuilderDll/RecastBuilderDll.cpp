@@ -14,17 +14,25 @@
 extern "C"
 {
 
-// Cells per mini-tile side, = MapBuilder.cpp VERTEX_PER_TILE. Each sub-tile is
-// subdivided into MINI_TILE_SIZE-cell slabs, every slab goes through the full
-// Recast pipeline on its own, and the poly meshes are merged at the end.
+// Two separate knobs. They were one, derived from each other, which is why
+// changing the slab size silently changed the edge cap as well.
 //
-// This is not just a performance knob: the subdivision is what BOUNDS the
-// length of a contour edge. maxEdgeLen below is MINI_TILE_SIZE+1 cells, so at
-// cs 0.30303 a polygon edge can never exceed ~24.5 yards. Raising this to 448
-// made one slab cover the whole sub-tile, removed the bound, and produced
-// 96-yard blade polygons spanning the level — navigable, and wrong.
-static const int MINI_TILE_SIZE     = 80;
-static const int MINI_TILE_EDGE_LEN = MINI_TILE_SIZE + 1;  // maxEdgeLen, in cells
+// MINI_TILE_SIZE slices the sub-tile into slabs; each slab goes through Recast
+// on its own and the poly meshes are merged at the end. A polygon cannot span
+// two slabs, so the slab is the ONLY thing that bounds polygon edge length.
+// 80 is MapBuilder.cpp VERTEX_PER_TILE; AzerothCore uses 80 as well, and its
+// tiles cap at exactly 80 cells of its own cell size. Raising this to 448
+// removed the bound and produced 133-yard blade polygons crossing the level.
+//
+// MAX_CONTOUR_EDGE_LEN is the maxEdgeLen handed to rcBuildContours. It only
+// reaches WALL edges: RC_CONTOUR_TESS_WALL_EDGES is the only tessellation flag
+// set, and RecastContour.cpp tessellates a contour edge only when its
+// neighbouring region is 0. Edges facing another region, or the border strip
+// (RC_BORDER_REG sits inside RC_CONTOUR_REG_MASK), are never cut. So it cannot
+// bound polygon size on its own — with slab 448 the Stockade tiles came out
+// bit-identical whether this was 80 or 449.
+static const int MINI_TILE_SIZE        = 80;
+static const int MAX_CONTOUR_EDGE_LEN  = 80;
 
 int BuildTileDetailed(
     const RecastBuildParams* params,
@@ -185,7 +193,7 @@ int BuildTileDetailed(
             rcContourSet* cset = rcAllocContourSet();
             if (!cset) { rcFreeCompactHeightfield(chf); continue; }
 
-            if (!rcBuildContours(&ctx, *chf, maxSimplError, MINI_TILE_EDGE_LEN,
+            if (!rcBuildContours(&ctx, *chf, maxSimplError, MAX_CONTOUR_EDGE_LEN,
                 *cset, RC_CONTOUR_TESS_WALL_EDGES))
             {
                 rcFreeContourSet(cset);
