@@ -215,6 +215,25 @@
 628 33,31 (324.7244 -749.0421 49.8212) (325.9167 -781.8993 48.9203) 0.40 1 0
 628 33,31 (311.9264 -913.9770 49.2770) (323.4965 -883.8021 48.9163) 0.40 1 0
 
+// Sauts battleground que HonorBuddy n'a jamais bakes dans ses meshes: gardes des
+// anciennes entrees manuelles. Verifies un par un contre le jeu de liens binaires
+// ci-dessus, le plus proche est a 11.8 yards, donc aucun conflit. Sans eux le bot
+// reste coince sur les plateformes de depart d'EotS et d'AV.
+566 29,28 (1832.7219 1524.9789 1255.7424) (1849.6854 1516.6255 1223.6830) 2.0 1 1 // Horde Start Jump Right
+566 29,28 (1833.1542 1549.9619 1255.4094) (1853.3661 1560.6060 1217.2402) 2.0 1 1 // Horde Start Jump Left
+566 28,27 (2498.3010 1613.3431 1256.4886) (2481.2131 1620.3809 1222.4836) 2.0 1 1 // Alliance Start Jump Right
+566 29,27 (2498.1190 1586.3568 1257.2816) (2476.9830 1576.5835 1216.5106) 2.0 1 1 // Alliance Start Jump Left
+566 29,28 (1846.264 1535.062 1240.796) (1849.813 1527.303 1237.262) 2.0 1 1 // Playerbot Horde JumpTo 1
+566 29,27 (2484.601 1598.209 1244.344) (2478.424 1609.539 1238.651) 2.0 1 1 // Playerbot Alliance JumpTo 1
+489 29,30 (1057.2539 1395.1931 339.13928) (1071.358 1399.4602 323.8078) 2.0 1 1 // Horde Start Jump
+489 29,29 (1404.8998 1553.6874 343.37976) (1387.6497 1543.1067 321.87744) 2.0 1 1 // Alliance Graveyard Jump
+489 29,29 (1075.233 1398.645 323.669) (1096.590 1395.070 317.016) 2.0 1 1 // Playerbot Horde JumpTo
+489 29,29 (1385.325 1544.592 322.047) (1370.710 1543.550 321.585) 2.0 1 1 // Playerbot Alliance JumpTo
+30 32,30 (679.95416 -401.72485 64.570984) (671.5433 -376.83203 30.1034) 2.0 1 1 // Alliance Start Jump
+30 32,30 (559.6731 -39.72403 36.81192) (549.42096 -40.672104 22.946142) 2.0 1 1 // Alliance Main Base Jump
+30 32,33 (-535.70386 -375.39938 49.351616) (-521.4138 -362.21307 32.76135) 2.0 1 1 // Horde GY Jump
+30 32,34 (-1252.9994 -285.83664 75.64549) (-1243.4874 -296.2849 65.603584) 2.0 1 1 // Horde Main Base Jump
+
 
 # Map 34 - Stormwind Stockade: offmesh connection (MattB)
 34 32,31 (59.30 -20.27 0.56) (93.47 -25.61 3.03) 5.0 1 1
@@ -243,12 +262,19 @@
 // VAGUE 1: chutes one-way userId 0xFFFFFFFF + micro-raccords bidirectionnels.
 // Aucun support cote bot n'est necessaire, la gravite fait la traversee.
 //
-// Pas encore injecte:
-//   162 liens de saut (plat/denivele) - demandent un ScriptHelpers.CreateForceJump
-//     par map, sinon le bot marche dans le vide (cas Blackfathom).
-//   25 liens 0xFFFFFFFE descendants - liens longue portee poses a la main dans
+// Etat: 209 des 413 liens du CSV sont dans ce fichier, 204 ne le sont pas.
+//
+// Pas encore injecte (204):
+//   140 liens de saut - 97 plats bidir, 18 plats one-way, 22 denivele bidir,
+//     3 montees. Ils demandent un ScriptHelpers.CreateForceJump par map, sinon
+//     le bot marche dans le vide (cas Blackfathom). Les 12 sauts de SotA sont
+//     l'exception: injectes avec le reste du jeu battleground de HonorBuddy.
+//   19 liens 0xFFFFFFFE descendants - liens longue portee poses a la main dans
 //     l'editeur HB, jusqu'a 1289 yards de denivele: ce ne sont pas des chutes.
-//   ascenseurs, portails et interactions - deja couverts manuellement plus haut.
+//     Les 6 autres (AV et WSG, -7 a -21 yards) sont venus avec le bloc battleground.
+//   36 ascenseurs, portails et interactions - deja couverts par les entrees
+//     manuelles corrigees en jeu, plus haut dans ce fichier.
+//   9 liens a GameObject absent de la base 3.3.5a (205079, 201707, 201708).
 //
 // Ecartes avec raison:
 //   Deadmines (map 36, 2 liens) - donjon refait en 4.0, coordonnees Cataclysm.
