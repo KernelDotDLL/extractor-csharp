@@ -527,3 +527,19 @@
 // creature 29501 a (2409.09 -5722.37 154.01), a moins de 0.5 yard des departs.
 609 42,27 (2408.8850 -5722.4028 153.9218) (2356.5100 -5664.1802 382.2500) 0.40 13 0
 609 42,27 (2325.1631 -5659.5640 382.9500) (2431.0000 -5730.2100 157.8029) 0.40 13 0
+
+// Map 530 - Duskwither Spire (Eversong Woods): orbes de translocation entre les
+// etages de la tour. Valide contre le repack: GameObject 'Orb of Translocation'
+// (type 10 Goober) a 1.7 yard des deux points de depart, PNJ Duskwither
+// Apprentice et Ether Fiend a 22 yards. areaType 8 -> HandlePortal, qui accepte
+// les Goober.
+530 46,14 (9287.2461 -7914.8008 176.3287) (9334.0303 -7880.0200 74.9095) 0.40 8 0
+530 46,14 (9335.3506 -7881.9141 75.1467) (9330.6602 -7810.8599 136.5690) 0.40 8 0
+
+// Map 530 - Firewing Point (Foret de Terokkar): orbes de translocation de la
+// tour elfe de sang. Valide contre le repack: 'Orb of Translocation' a 2.7 et
+// 2.9 yards, PNJ Firewing Warlock et Bloodwarder a 14 yards.
+// areaType 14 -> HandleInteractObject, qui prend le GameObject le plus proche
+// du point d'entree du lien.
+530 25,36 (-2260.1311 3222.0569 5.9073) (-2260.0759 3211.1890 14.1115) 0.40 14 0
+530 26,36 (-2260.5171 3183.4250 23.7929) (-2260.2810 3214.9761 -4.0539) 0.40 14 0
