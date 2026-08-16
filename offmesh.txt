@@ -503,16 +503,27 @@
 // HandleInteractUnit, qui prend le PNJ le plus proche.
 // ============================================================================
 
-// Map 1 - Darnassus <-> Rut'theran Village: le teleporteur du pied de Darnassus.
-// Sans ce lien les deux zones sont deconnectees dans le navmesh (2600 yards
-// d'ecart), le bot ne peut pas quitter Teldrassil a pied. Teldrassil n'a pas
-// bouge entre 3.3.5a et Legion, les coordonnees sont donc valides.
-// A confirmer en jeu: si le log dit 'Could not find portal to take', c'est que
-// le teleporteur n'est pas un GameObject cliquable et qu'il faudra un handler.
-1 27,13 (9946.9482 2627.0459 1318.4050) (8380.5596 998.5360 29.1294) 1.00 8 0
-1 30,16 (8398.1895 1004.7710 30.2861) (9946.2500 2612.9700 1316.2450) 0.40 8 0
+// Map 1 - Darnassus <-> Rut'theran Village. Sans ces liens les deux zones sont
+// deconnectees dans le navmesh (2600 yards d'ecart) et le bot ne peut pas
+// quitter Teldrassil.
+//
+// Coordonnees prises dans le repack Naaru 3.3.5a, PAS dans les meshes HB:
+//   AreaTrigger.dbc 527 'Teddrassil - Ruth Theran'  pad (9947.48 2630.04 1318.60)
+//     -> areatrigger_teleport cible (8786.36 967.445 30.197)
+//   AreaTrigger.dbc 542 'Teddrassil - Darnassus'    pad (8799.41 969.79 30.24)
+//     -> areatrigger_teleport cible (9946.25 2612.97 1316.49)
+// Le cote Rut'theran des meshes HB est a 400 yards de la realite 3.3.5a
+// (Kalimdor refait en 4.0); seul le cote Darnassus correspondait.
+//
+// areaType 1 et non 8: c'est un areatrigger de rayon 10 sur lequel on marche,
+// pas un GameObject cliquable - aucun GO Goober/SpellCaster a 40 yards des deux
+// pads. HandlePortal echouerait. Le serveur teleporte des l'entree dans le rayon.
+1 27,13 (9946.9482 2627.0459 1318.4050) (8786.3600 967.4450 30.1970) 1.00 1 0
+1 30,15 (8799.4100 969.7900 30.2400) (9946.2500 2612.9700 1316.4900) 1.00 1 0
 
 // Map 609 - Acherus: deuxieme point d'embarquement des gryphons, dans les deux
 // sens. Complete la paire deja presente plus haut (PNJ 29488 et 29501).
+// Valide contre le repack: creature 29488 spawn a (2325.40 -5659.33 383.84) et
+// creature 29501 a (2409.09 -5722.37 154.01), a moins de 0.5 yard des departs.
 609 42,27 (2408.8850 -5722.4028 153.9218) (2356.5100 -5664.1802 382.2500) 0.40 13 0
 609 42,27 (2325.1631 -5659.5640 382.9500) (2431.0000 -5730.2100 157.8029) 0.40 13 0
