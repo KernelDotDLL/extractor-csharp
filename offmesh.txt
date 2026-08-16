@@ -492,3 +492,27 @@
 566 29,28 (1826.9189 1553.1620 1258.5790) (1847.4700 1540.3450 1243.1620) 0.40 1 0
 566 29,28 (1846.1910 1536.6281 1241.7700) (1840.3540 1518.1720 1229.3290) 0.40 1 0
 566 28,27 (2498.9619 1605.3470 1236.2090) (2477.0300 1617.9041 1221.1840) 0.40 1 0
+
+// ============================================================================
+// Portails et interactions typees par HonorBuddy (area 8 = Portal, 13 =
+// InteractUnit). Legion met tout en area 1, ce sont les meshes 4.3.4 et 5.4.8
+// qui portent le type - voir AUDIT_OFFMESH_HB2_2026-08.md section 2.
+//
+// areaType 8 va vers MeshNavigator.HandlePortal, qui cherche un GameObject
+// Goober ou SpellCaster a portee et l'active. areaType 13 va vers
+// HandleInteractUnit, qui prend le PNJ le plus proche.
+// ============================================================================
+
+// Map 1 - Darnassus <-> Rut'theran Village: le teleporteur du pied de Darnassus.
+// Sans ce lien les deux zones sont deconnectees dans le navmesh (2600 yards
+// d'ecart), le bot ne peut pas quitter Teldrassil a pied. Teldrassil n'a pas
+// bouge entre 3.3.5a et Legion, les coordonnees sont donc valides.
+// A confirmer en jeu: si le log dit 'Could not find portal to take', c'est que
+// le teleporteur n'est pas un GameObject cliquable et qu'il faudra un handler.
+1 27,13 (9946.9482 2627.0459 1318.4050) (8380.5596 998.5360 29.1294) 1.00 8 0
+1 30,16 (8398.1895 1004.7710 30.2861) (9946.2500 2612.9700 1316.2450) 0.40 8 0
+
+// Map 609 - Acherus: deuxieme point d'embarquement des gryphons, dans les deux
+// sens. Complete la paire deja presente plus haut (PNJ 29488 et 29501).
+609 42,27 (2408.8850 -5722.4028 153.9218) (2356.5100 -5664.1802 382.2500) 0.40 13 0
+609 42,27 (2325.1631 -5659.5640 382.9500) (2431.0000 -5730.2100 157.8029) 0.40 13 0
