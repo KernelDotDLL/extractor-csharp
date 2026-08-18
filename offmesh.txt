@@ -543,3 +543,10 @@
 // du point d'entree du lien.
 530 25,36 (-2260.1311 3222.0569 5.9073) (-2260.0759 3211.1890 14.1115) 0.40 14 0
 530 26,36 (-2260.5171 3183.4250 23.7929) (-2260.2810 3214.9761 -4.0539) 0.40 14 0
+
+// Kalimdor 30,24 - entree exterieure de Blackfathom Deeps (Zoram'gar).
+// Les 3 liens de HB sur cette tuile. Ecartes en vague 1 car H_plat/G_denivele,
+// pas D_chute ; le bot longeait la paroi au lieu de descendre la structure.
+1 30,24 (4249.4639 749.4848 -23.1312) (4253.0811 755.2655 -22.8606) 1.00 1 0
+1 30,24 (4155.2261 916.2935 -17.6767) (4148.7080 902.6125 -22.8574) 1.00 1 1
+1 30,24 (4145.8950 900.2845 -24.3857) (4142.2090 891.9578 -19.5002) 1.00 1 1

@@ -31,3 +31,4 @@ nul
 # Build artefact (legacy WIP)
 build/
 output_test/
+offmesh.txt.before_kalimdor3024
