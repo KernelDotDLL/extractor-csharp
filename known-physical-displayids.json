@@ -43,7 +43,12 @@
     {
       "displayId": 373,
       "entry": 172945,
-      "comment": "Mighty Blaze (Orgrimmar brazier, small) - type 8, needs entry 172945 in MUST_INCLUDE_ENTRIES of write_gameobject_spawns_bin_v2.py"
+      "comment": "Mighty Blaze (Orgrimmar brazier, small) - type 8, needs entries 172941 and 172945 in MUST_INCLUDE_ENTRIES of write_gameobject_spawns_bin_v2.py"
+    },
+    {
+      "displayId": 709,
+      "entry": 173016,
+      "comment": "Borstan's Firepit (Orgrimmar vendor stall) - type 5"
     },
     {
       "displayId": 710,
