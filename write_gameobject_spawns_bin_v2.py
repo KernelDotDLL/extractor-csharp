@@ -38,21 +38,11 @@ ENTRY_SIZE = 40
 # (rotation0..3 = 0 means identity rotation when normalised).
 IDENTITY_QUAT = (0.0, 0.0, 0.0, 1.0)
 
-# Force-include specific gameobject.entries even if their `type` is in the
-# EXCLUDED_TYPES list (or if they have no matching template row). Useful to
-# guarantee seasonal decorations, custom props, or test objects are always
-# present in the .bin.
-MUST_INCLUDE_ENTRIES: set[int] = {
-    172941,  # Mighty Blaze (Orgrimmar Valley of Honor, displayId 373) - type 8 SPELL_FOCUS, filtered by the type exclusion
-    172945,  # Mighty Blaze (Orgrimmar brazier, small) - type 8 SPELL_FOCUS, filtered by the type exclusion
-    172952,  # Mighty Blaze (Orgrimmar brazier) - type 8 SPELL_FOCUS, same displayId 374 as 172953
-    172953,  # Mighty Blaze (Orgrimmar brazier) - type 8 SPELL_FOCUS, filtered by the type exclusion
-}
-# Examples (commented out — uncomment to enable):
-# MUST_INCLUDE_ENTRIES = {
-#     188215,  # Collision PC Size (uses 3D models stacked at different Z — trees/decor)
-#     178438,  # Lights (string-light decorations)
-# }
+# No type filter here on purpose. Every gameobject row that has a template goes
+# into the .bin; known-physical-displayids.json is the only thing that decides
+# which DisplayIds actually get collision. Filtering by gameobject_template.type
+# used to drop the whole SPELL_FOCUS family (braziers, bonfires, forges, anvils)
+# before the whitelist ever saw it, which forced a per-entry force-include list.
 
 
 def mysql_query(sql: str) -> list[tuple]:
@@ -72,19 +62,12 @@ def main() -> None:
     # are 0 (MaNGOS often leaves rotation0..3 at 0 and stores a single
     # 'orientation' float instead). For gameobjects that already have a
     # proper quaternion, we use it as-is.
-    # Build WHERE clause: exclude trap/spell-focus/decoration-no-collision types
-    # UNLESS the row is in MUST_INCLUDE_ENTRIES (force-include).
-    must_include_clause = ""
-    if MUST_INCLUDE_ENTRIES:
-        ids_csv = ",".join(str(e) for e in sorted(MUST_INCLUDE_ENTRIES))
-        must_include_clause = f" OR g.id IN ({ids_csv})"
     rows = mysql_query(
         "SELECT g.id, g.map, g.position_x, g.position_y, g.position_z, "
         "       g.rotation0, g.rotation1, g.rotation2, g.rotation3, "
         "       COALESCE(gt.DisplayId, 0) "
         "FROM world.gameobject g "
-        "LEFT JOIN world.gameobject_template gt ON gt.entry = g.id "
-        f"WHERE gt.type NOT IN (6, 8, 13, 17, 18){must_include_clause}"
+        "LEFT JOIN world.gameobject_template gt ON gt.entry = g.id"
     )
     print(f"  Fetched {len(rows)} spawn rows")
 
