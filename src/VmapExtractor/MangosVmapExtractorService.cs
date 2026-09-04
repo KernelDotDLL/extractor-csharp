@@ -576,9 +576,9 @@ public sealed class MangosVmapExtractorService
                     if (!_writtenVmoFiles.Add(vmoRel))
                     {
                         skippedAlready++;
-                        continue;
+                        extracted = true;
                     }
-                    if (await TryBuildWmoAsync(modelPath, ct))
+                    else if (await TryBuildWmoAsync(modelPath, ct))
                     {
                         built++;
                         extracted = true;
@@ -591,9 +591,9 @@ public sealed class MangosVmapExtractorService
                     if (!_writtenVmoFiles.Add(vmdRel))
                     {
                         skippedAlready++;
-                        continue;
+                        extracted = true;
                     }
-                    if (await TryBuildM2Async(modelPath, ct))
+                    else if (await TryBuildM2Async(modelPath, ct))
                     {
                         built++;
                         extracted = true;
@@ -601,10 +601,12 @@ public sealed class MangosVmapExtractorService
                     else { failed++; _writtenVmoFiles.Remove(vmdRel); }
                 }
 
-                // MaNGOS writes the entry only if the file exists on disk
-                // (it checks FileExists(buildings/path + name) before writing
-                // the record). TryBuildWmo/BuildM2 just wrote it, so we
-                // always append if extracted == true.
+                // MaNGOS writes the entry whenever the model file exists on disk:
+                // ExtractSingleModel/ExtractSingleWmo return true without doing
+                // any work when the output is already there. A model shared by
+                // several DisplayIds, or already built by the ADT doodad pass,
+                // must therefore still get its record — the dedup set only skips
+                // the extraction, never the manifest entry.
                 if (extracted)
                 {
                     string uniformName = MangosVmapBuildingWriter.GetUniformName(modelPath);
