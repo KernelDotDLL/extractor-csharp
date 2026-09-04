@@ -40,6 +40,9 @@
     <Content Include="..\gameobject_spawns.bin"
              Condition="Exists('..\gameobject_spawns.bin')"
              CopyToOutputDirectory="PreserveNewest" Link="gameobject_spawns.bin" />
+    <Content Include="..\known-physical-displayids.json"
+             Condition="Exists('..\known-physical-displayids.json')"
+             CopyToOutputDirectory="PreserveNewest" Link="known-physical-displayids.json" />
   </ItemGroup>
 
 </Project>
