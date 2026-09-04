@@ -279,8 +279,11 @@ public sealed class MmapExtractorService
 
         _logger.LogInformation("Mmap extraction complete for {MapName}: {Success}/{Total} tiles",
             mapName, successCount, tiles.Count);
-        // Refresh header at end in case future metadata changes.
-        WriteMmapHeader(mapId, (uint)tiles.Count, maxAdtX, maxAdtY);
+        // Refresh header at end in case future metadata changes. Always the full
+        // WDT set: a --tile run must not shrink maxTiles to the rebuilt subset,
+        // or dtNavMesh::init sizes the tile pool for that subset and every other
+        // tile fails addTile with DT_OUT_OF_MEMORY at runtime.
+        WriteMmapHeader(mapId, (uint)allTiles.Count, maxAdtX, maxAdtY);
         return successCount;
     }
 
