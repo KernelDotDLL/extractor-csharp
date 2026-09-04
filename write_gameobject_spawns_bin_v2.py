@@ -65,14 +65,16 @@ def main() -> None:
     rows = mysql_query(
         "SELECT g.id, g.map, g.position_x, g.position_y, g.position_z, "
         "       g.rotation0, g.rotation1, g.rotation2, g.rotation3, "
-        "       COALESCE(gt.DisplayId, 0) "
+        "       COALESCE(gt.DisplayId, 0), COALESCE(NULLIF(gt.size, 0), 1) "
         "FROM world.gameobject g "
         "LEFT JOIN world.gameobject_template gt ON gt.entry = g.id"
     )
     print(f"  Fetched {len(rows)} spawn rows")
 
-    # The .bin struct has no 'scale' field per spawn. We use 1.0 for everyone.
-    # If the DB ever exposes per-spawn scale, wire it here.
+    # Scale comes from gameobject_template.size, which is what the client applies
+    # to the model. Writing 1.0 for everyone left every scaled object with a
+    # collision hole the wrong size: the Orgrimmar shop signs are all size 1.33,
+    # so the navmesh hole was a third too small and a mounted bot clipped them.
     records = []
     skipped = 0
     for r in rows:
@@ -87,6 +89,7 @@ def main() -> None:
             rot2 = float(r[7])
             rot3 = float(r[8])
             display_id = int(r[9])
+            scale = float(r[10])
             if display_id == 0:
                 # Template not found in gameobject_template. Skip — there is no
                 # model to rasterise anyway.
@@ -117,7 +120,7 @@ def main() -> None:
             display_id,
             pos_x, pos_y, pos_z,
             rot0, rot1, rot2, rot3,
-            1.0,  # scale (not in the .bin format)
+            scale,
         ))
 
     print(f"  {len(records)} valid records ({skipped} skipped without template)")
