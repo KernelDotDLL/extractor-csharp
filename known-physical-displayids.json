@@ -153,10 +153,6 @@
       "comment": "FirewoodPile01 - tas de bois de feu (Campfire, Bonfire) - type 8, 0.9 y donc sous walkableClimb: sans effet attendu"
     },
     {
-      "displayId": 7735,
-      "comment": "Collision_PCSize - bloqueur invisible pose par Blizzard, 1473 spawns - type 5. Mesure sur Northrend: trou chez HB 11/16, chez nous 1/16"
-    },
-    {
       "displayId": 166,
       "comment": "Anvil - enclume classique, 197 spawns - type 8"
     },
