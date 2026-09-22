@@ -32,3 +32,6 @@ nul
 build/
 output_test/
 offmesh.txt.before_kalimdor3024
+
+# Python
+__pycache__/
