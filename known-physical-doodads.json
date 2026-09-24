@@ -1,0 +1,10 @@
+{
+  "$schema": "v1",
+  "comment": "Doodad models that block the player in game but carry no collision mesh in their M2. MaNGOS drops those placements, so the navmesh keeps a clear passage straight through them and the bot walks into the object. For the models listed here only, the extractor falls back to the M2 header box (collision_box at 0xBC when it holds something, otherwise the render bounding box at 0xA0), capped by KnownPhysicalDoodads.MaxBoxSide. Matching is a case-insensitive substring of the M2 path, so one entry covers every spelling and every numbered variant of a family. Keep this list short: a blanket fallback would use render boxes -- flames, banners, foliage -- on more than 1.6 million placements.",
+  "entries": [
+    {
+      "model": "BattleGlade",
+      "comment": "Elwynn battle glade trophies: woven straw shield, banner, planted sword, polearm with skull. Tall decorations set against walls; they block the player in game but carry no collision mesh."
+    }
+  ]
+}

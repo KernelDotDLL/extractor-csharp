@@ -43,6 +43,9 @@
     <Content Include="..\known-physical-displayids.json"
              Condition="Exists('..\known-physical-displayids.json')"
              CopyToOutputDirectory="PreserveNewest" Link="known-physical-displayids.json" />
+    <Content Include="..\known-physical-doodads.json"
+             Condition="Exists('..\known-physical-doodads.json')"
+             CopyToOutputDirectory="PreserveNewest" Link="known-physical-doodads.json" />
   </ItemGroup>
 
 </Project>

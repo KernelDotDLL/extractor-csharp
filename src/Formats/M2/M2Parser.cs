@@ -367,6 +367,82 @@ public sealed class M2Parser
     /// so the caller can fall back to skippedNoBounds instead of injecting a
     /// fake 1×1×1 box.
     /// </summary>
+    /// <summary>
+    /// Same idea as <see cref="TryBuildHeaderBoundingBoxProxy"/>, but emits the box
+    /// in RAW MODEL SPACE (x, y, z), exactly like <see cref="TryParseBoundingMesh"/>
+    /// does for a real collision mesh. The GameObject variant pre-permutes its
+    /// output for AppendGameObjectM2; the doodad pipeline must not get that.
+    ///
+    /// Reads the canonical MD20 header fields:
+    ///   0xA0 (160) bounding_box   — the render box, non-empty for a visible model
+    ///   0xBC (188) collision_box  — empty whenever the model has no collision mesh
+    /// The collision box is preferred when it holds something; otherwise the render
+    /// box is used, which is why the caller must gate this behind a whitelist.
+    /// </summary>
+    public bool TryBuildBoundingBoxProxyModelSpace(string m2Path, out float[] vertices, out ushort[] indices, float maxSide)
+    {
+        vertices = Array.Empty<float>();
+        indices = Array.Empty<ushort>();
+
+        if (!_archive.TryReadFile(m2Path, out ReadOnlyMemory<byte> data))
+            return false;
+
+        var span = data.Span;
+        if (span.Length < 212
+            || span[0] != 'M' || span[1] != 'D' || span[2] != '2' || span[3] != '0')
+            return false;
+
+        if (!TryReadBox(span, 188, out var box) && !TryReadBox(span, 160, out box))
+            return false;
+
+        float sx = box[3] - box[0], sy = box[4] - box[1], sz = box[5] - box[2];
+        if (sx > maxSide || sy > maxSide || sz > maxSide)
+        {
+            _logger?.LogInformation(
+                "[M2Parser] bbox proxy rejected for {Path}: {SX:F2} x {SY:F2} x {SZ:F2} exceeds {Max:F1}",
+                m2Path, sx, sy, sz, maxSide);
+            return false;
+        }
+
+        float x0 = box[0], y0 = box[1], z0 = box[2], x1 = box[3], y1 = box[4], z1 = box[5];
+        vertices = new[]
+        {
+            x0, y0, z0,  x1, y0, z0,  x1, y1, z0,  x0, y1, z0,
+            x0, y0, z1,  x1, y0, z1,  x1, y1, z1,  x0, y1, z1,
+        };
+        indices = new ushort[]
+        {
+            0, 2, 1, 0, 3, 2,   // z min
+            4, 5, 6, 4, 6, 7,   // z max
+            0, 1, 5, 0, 5, 4,   // y min
+            1, 2, 6, 1, 6, 5,   // x max
+            2, 3, 7, 2, 7, 6,   // y max
+            3, 0, 4, 3, 4, 7,   // x min
+        };
+
+        _logger?.LogInformation(
+            "[M2Parser] bbox proxy (model space) for {Path}: {SX:F2} x {SY:F2} x {SZ:F2}",
+            m2Path, sx, sy, sz);
+        return true;
+    }
+
+    private static bool TryReadBox(ReadOnlySpan<byte> span, int off, out float[] box)
+    {
+        box = Array.Empty<float>();
+        if (off + 24 > span.Length) return false;
+
+        var b = new float[6];
+        for (int i = 0; i < 6; i++)
+        {
+            b[i] = BitConverter.ToSingle(span.Slice(off + i * 4, 4));
+            if (!float.IsFinite(b[i])) return false;
+        }
+        if (b[3] - b[0] <= 0.01f || b[4] - b[1] <= 0.01f || b[5] - b[2] <= 0.01f) return false;
+
+        box = b;
+        return true;
+    }
+
     public bool TryBuildHeaderBoundingBoxProxy(string m2Path, out float[] vertices, out ushort[] indices)
     {
         vertices = Array.Empty<float>();

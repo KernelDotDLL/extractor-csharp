@@ -63,6 +63,7 @@ public sealed class MangosVmapExtractorService
         _outputDir = outputDir;
         _globalThreadCount = threadCount;
         _logger.LogInformation("[MangosVmap] Output directory: {OutputDir} (threads={Threads})", outputDir, threadCount);
+        KnownPhysicalDoodads.Load(null, _logger);
     }
 
     public async Task<int> ExtractMapAsync(
@@ -1002,6 +1003,20 @@ public sealed class MangosVmapExtractorService
                 _logger.LogWarning("[MangosVmap] M2 parse/read FAILED (file not found, MD20 magic invalid or truncated file): {M2}", m2Name);
                 return false;
             }
+            if ((verts.Length == 0 || indices.Length == 0) && KnownPhysicalDoodads.Matches(m2Name))
+            {
+                // Whitelisted model: it blocks the player in game but carries no
+                // collision mesh, so MaNGOS would drop every placement of it and
+                // the navmesh would keep a clear passage straight through it.
+                // Fall back to the model header's box.
+                if (_m2Parser.TryBuildBoundingBoxProxyModelSpace(
+                        m2Name, out verts, out indices, KnownPhysicalDoodads.MaxBoxSide))
+                {
+                    _logger.LogInformation(
+                        "[MangosVmap] M2 has no bounding mesh but is whitelisted — using its header box: {M2}", m2Name);
+                }
+            }
+
             if (verts.Length == 0 || indices.Length == 0)
             {
                 // Mangos C++ also skips these (Model::open returns false when
