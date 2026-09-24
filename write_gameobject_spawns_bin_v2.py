@@ -22,6 +22,7 @@ as-is (posX = spawn.PosX) and applies the standard C++ transform (flip X/Y,
 output (Y, Z, X) for Recast).
 """
 
+import argparse
 import struct
 import subprocess
 import sys
@@ -29,6 +30,13 @@ from pathlib import Path
 
 MYSQL_BIN = r"C:\Users\Texy6\Desktop\Naaru Blizzlike Repack 3.3.5a v2025.07\mysql\bin\mysql.exe"
 BIN_PATH = Path(r"C:\Users\Texy6\Desktop\newhcb\Navigation View3D\Extractor_projects-master\extractor-csharp\gameobject_spawns.bin")
+
+# MoP 5.4.8 repack: the schema is the same, only the server and the database differ.
+#   --mysql-bin "...\MOPPREMIUM\Database\_Server\mysql\bin\mysql.exe"
+#   --user root --password ascent --db world --out gameobject_spawns.mop.bin
+DB_NAME = "world"
+DB_USER = "root"
+DB_PASSWORD = ""
 
 GPSW_MAGIC = 0x47505753
 GPSW_VERSION = 1
@@ -46,10 +54,11 @@ IDENTITY_QUAT = (0.0, 0.0, 0.0, 1.0)
 
 
 def mysql_query(sql: str) -> list[tuple]:
-    result = subprocess.run(
-        [MYSQL_BIN, "-u", "root", "-N", "-B", "-e", sql],
-        capture_output=True, text=True, timeout=300,
-    )
+    cmd = [MYSQL_BIN, "-u", DB_USER]
+    if DB_PASSWORD:
+        cmd.append("-p" + DB_PASSWORD)
+    cmd += ["-N", "-B", "-e", sql]
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
     if result.returncode != 0:
         raise RuntimeError(f"MySQL error: {result.stderr.strip()}")
     return [tuple(line.split("\t")) for line in result.stdout.strip().splitlines() if line]
@@ -66,8 +75,8 @@ def main() -> None:
         "SELECT g.id, g.map, g.position_x, g.position_y, g.position_z, "
         "       g.rotation0, g.rotation1, g.rotation2, g.rotation3, "
         "       COALESCE(gt.DisplayId, 0), COALESCE(NULLIF(gt.size, 0), 1) "
-        "FROM world.gameobject g "
-        "LEFT JOIN world.gameobject_template gt ON gt.entry = g.id"
+        f"FROM {DB_NAME}.gameobject g "
+        f"LEFT JOIN {DB_NAME}.gameobject_template gt ON gt.entry = g.id"
     )
     print(f"  Fetched {len(rows)} spawn rows")
 
@@ -139,8 +148,22 @@ def main() -> None:
     assert size == expected, f"Size mismatch: {size} != {expected}"
 
 
+def parse_args() -> None:
+    global MYSQL_BIN, BIN_PATH, DB_NAME, DB_USER, DB_PASSWORD
+    ap = argparse.ArgumentParser(description="Write gameobject_spawns.bin from a server world database")
+    ap.add_argument("--mysql-bin", default=MYSQL_BIN)
+    ap.add_argument("--db", default=DB_NAME)
+    ap.add_argument("--user", default=DB_USER)
+    ap.add_argument("--password", default=DB_PASSWORD)
+    ap.add_argument("--out", default=str(BIN_PATH))
+    a = ap.parse_args()
+    MYSQL_BIN, DB_NAME, DB_USER, DB_PASSWORD = a.mysql_bin, a.db, a.user, a.password
+    BIN_PATH = Path(a.out)
+
+
 if __name__ == "__main__":
     try:
+        parse_args()
         main()
     except Exception as e:
         print(f"ERROR: {e}", file=sys.stderr)
