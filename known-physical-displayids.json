@@ -4,6 +4,123 @@
   "comment": "Strict per-DisplayId whitelist. Only entries listed below produce collision for their GameObjects. Set `importAll: true` (and empty `entries`) to revert to legacy mangos behavior of including every GameObject. Pass via --displayids <path> OR auto-discovered next to the executable.: importAll=true — every GameObject from .bin receives collision, like the original mangos-tc C++ extractor. Per-DisplayId entries below are ignored. Pass via --displayids <path> OR auto-discovered next to the executable.",
   "entries": [
     {
+      "displayId": 166,
+      "comment": "Anvil - enclume classique, 197 spawns - type 8"
+    },
+    {
+      "displayId": 197,
+      "comment": "DWARVENBRAZIER02 - brasero nain / brasero de cuisson, 156 spawns - types 5 et 8"
+    },
+    {
+      "displayId": 199,
+      "comment": "FirewoodPile01 - tas de bois de feu (Campfire, Bonfire) - type 8, 0.9 y donc sous walkableClimb: sans effet attendu"
+    },
+    {
+      "displayId": 201,
+      "comment": "SmallBrazier01 - brasero (Blazing Fire, Burning Brazier), 280 spawns - type 8"
+    },
+    {
+      "displayId": 209,
+      "comment": "OrcSmallFoundryPit - foyer de forge orc - type 8"
+    },
+    {
+      "displayId": 273,
+      "comment": "Tradeskill_Anvil_01 - enclume (Anvil, Black Anvil, Argent Verdict Anvil) - types 5 et 8, 105 spawns"
+    },
+    {
+      "displayId": 305,
+      "comment": "Tradeskill_Forge_03 - forge (The Burning Anvil) - type 8, 6 y de haut"
+    },
+    {
+      "displayId": 309,
+      "comment": "Signpost, directional (Orgrimmar Main Gate, The Drag, Valley of Honor, Razor Hill, zeppelin towers) - type 5, 82 entries world-wide"
+    },
+    {
+      "displayId": 331,
+      "comment": "ORCTABLECOOKER01FIRE - table de cuisson (Orc Cooker, Cooking Table) - type 8"
+    },
+    {
+      "displayId": 366,
+      "comment": "Brazier / Burning Brazier / Smoldering Blaze - type 8"
+    },
+    {
+      "displayId": 373,
+      "entry": 172945,
+      "comment": "Mighty Blaze (Orgrimmar brazier, small) - type 8"
+    },
+    {
+      "displayId": 374,
+      "entry": 172953,
+      "comment": "Mighty Blaze (Orgrimmar brazier) - type 8"
+    },
+    {
+      "displayId": 375,
+      "comment": "Mighty Blaze / Brazier / Campfire - type 8"
+    },
+    {
+      "displayId": 408,
+      "comment": "Mighty Blaze / Fire / Fire Pit / Fierce Blaze - type 8"
+    },
+    {
+      "displayId": 409,
+      "comment": "SmokedMeatRack01 - fumoir a viande - type 8, 3.2 y de haut"
+    },
+    {
+      "displayId": 474,
+      "comment": "Brazier / Dark Brazier - types 5 and 8"
+    },
+    {
+      "displayId": 475,
+      "comment": "Brazier / Dark Brazier / Ancient Brazier - types 3, 5, 8 and 10"
+    },
+    {
+      "displayId": 707,
+      "comment": "Orgrimmar shop sign (Arms of Legend, Hunter's Hall, Hall of the Brave, Boomstick Imports) - type 5"
+    },
+    {
+      "displayId": 708,
+      "comment": "Orgrimmar shop sign (Bank of Orgrimmar) - type 5"
+    },
+    {
+      "displayId": 709,
+      "entry": 173016,
+      "comment": "Borstan's Firepit (Orgrimmar vendor stall) - type 5"
+    },
+    {
+      "displayId": 710,
+      "entry": 173017,
+      "comment": "Gotri's Travelling Gear (Orgrimmar vendor stall) - type 5"
+    },
+    {
+      "displayId": 711,
+      "comment": "Orgrimmar shop sign (Yelmak's Alchemy, Spiritfury Reagents, Survival of the Fittest) - type 5"
+    },
+    {
+      "displayId": 712,
+      "entry": 173018,
+      "comment": "Magar's Cloth Goods (Orgrimmar vendor stall) - type 5"
+    },
+    {
+      "displayId": 713,
+      "comment": "Orgrimmar shop sign (Jandi's Arboretum, Rekkul's Poisons, Dark Earth Fungus) - type 5"
+    },
+    {
+      "displayId": 714,
+      "comment": "Orgrimmar shop sign (Darkbriar Lodge, Darkfire Enclave, Godan's Runeworks, Shadowdeep Reagents, Spirit Lodge) - type 5"
+    },
+    {
+      "displayId": 715,
+      "comment": "Orgrimmar shop sign (Orgrimmar Bowyer) - type 5"
+    },
+    {
+      "displayId": 716,
+      "comment": "Orgrimmar shop sign (Nogg's Machine Shop, Red Canyon Mining, The Burning Anvil) - type 5"
+    },
+    {
+      "displayId": 717,
+      "comment": "Orgrimmar shop sign (Soran's Leather and Steel Armory) - type 5"
+    },
+    {
       "displayId": 1907,
       "comment": "Mailbox (PostBoxHuman)"
     },
@@ -28,161 +145,48 @@
       "comment": "Mailbox (variant)"
     },
     {
-      "displayId": 4591,
-      "comment": "Mailbox (PostBoxUndead)"
-    },
-    {
-      "displayId": 5971,
-      "comment": "Mailbox (PostBoxTroll)"
-    },
-    {
-      "displayId": 374,
-      "entry": 172953,
-      "comment": "Mighty Blaze (Orgrimmar brazier) - type 8"
-    },
-    {
-      "displayId": 373,
-      "entry": 172945,
-      "comment": "Mighty Blaze (Orgrimmar brazier, small) - type 8"
-    },
-    {
-      "displayId": 709,
-      "entry": 173016,
-      "comment": "Borstan's Firepit (Orgrimmar vendor stall) - type 5"
-    },
-    {
-      "displayId": 710,
-      "entry": 173017,
-      "comment": "Gotri's Travelling Gear (Orgrimmar vendor stall) - type 5"
-    },
-    {
-      "displayId": 712,
-      "entry": 173018,
-      "comment": "Magar's Cloth Goods (Orgrimmar vendor stall) - type 5"
-    },
-    {
-      "displayId": 309,
-      "comment": "Signpost, directional (Orgrimmar Main Gate, The Drag, Valley of Honor, Razor Hill, zeppelin towers) - type 5, 82 entries world-wide"
-    },
-    {
-      "displayId": 707,
-      "comment": "Orgrimmar shop sign (Arms of Legend, Hunter's Hall, Hall of the Brave, Boomstick Imports) - type 5"
-    },
-    {
-      "displayId": 708,
-      "comment": "Orgrimmar shop sign (Bank of Orgrimmar) - type 5"
-    },
-    {
-      "displayId": 711,
-      "comment": "Orgrimmar shop sign (Yelmak's Alchemy, Spiritfury Reagents, Survival of the Fittest) - type 5"
-    },
-    {
-      "displayId": 713,
-      "comment": "Orgrimmar shop sign (Jandi's Arboretum, Rekkul's Poisons, Dark Earth Fungus) - type 5"
-    },
-    {
-      "displayId": 714,
-      "comment": "Orgrimmar shop sign (Darkbriar Lodge, Darkfire Enclave, Godan's Runeworks, Shadowdeep Reagents, Spirit Lodge) - type 5"
-    },
-    {
-      "displayId": 715,
-      "comment": "Orgrimmar shop sign (Orgrimmar Bowyer) - type 5"
-    },
-    {
-      "displayId": 716,
-      "comment": "Orgrimmar shop sign (Nogg's Machine Shop, Red Canyon Mining, The Burning Anvil) - type 5"
-    },
-    {
-      "displayId": 717,
-      "comment": "Orgrimmar shop sign (Soran's Leather and Steel Armory) - type 5"
-    },
-    {
       "displayId": 4094,
       "comment": "Freestanding Torch 01 / Cave Torch - type 5, 372 spawns world-wide"
-    },
-    {
-      "displayId": 6370,
-      "comment": "General Torch 01 / Witchbane Torch - type 5"
-    },
-    {
-      "displayId": 366,
-      "comment": "Brazier / Burning Brazier / Smoldering Blaze - type 8"
-    },
-    {
-      "displayId": 375,
-      "comment": "Mighty Blaze / Brazier / Campfire - type 8"
-    },
-    {
-      "displayId": 408,
-      "comment": "Mighty Blaze / Fire / Fire Pit / Fierce Blaze - type 8"
-    },
-    {
-      "displayId": 474,
-      "comment": "Brazier / Dark Brazier - types 5 and 8"
-    },
-    {
-      "displayId": 475,
-      "comment": "Brazier / Dark Brazier / Ancient Brazier - types 3, 5, 8 and 10"
     },
     {
       "displayId": 4572,
       "comment": "Bonfire / Campfire - type 8"
     },
     {
-      "displayId": 273,
-      "comment": "Tradeskill_Anvil_01 - enclume (Anvil, Black Anvil, Argent Verdict Anvil) - types 5 et 8, 105 spawns"
+      "displayId": 4591,
+      "comment": "Mailbox (PostBoxUndead)"
     },
     {
-      "displayId": 209,
-      "comment": "OrcSmallFoundryPit - foyer de forge orc - type 8"
+      "displayId": 5251,
+      "comment": "Standing, Exterior, Medium - Xmas (entry 187235): wreath on a wooden stand, flanks the Northshire Abbey door and blocks the passage between the column and the wall"
     },
     {
-      "displayId": 305,
-      "comment": "Tradeskill_Forge_03 - forge (The Burning Anvil) - type 8, 6 y de haut"
-    },
-    {
-      "displayId": 331,
-      "comment": "ORCTABLECOOKER01FIRE - table de cuisson (Orc Cooker, Cooking Table) - type 8"
-    },
-    {
-      "displayId": 409,
-      "comment": "SmokedMeatRack01 - fumoir a viande - type 8, 3.2 y de haut"
-    },
-    {
-      "displayId": 199,
-      "comment": "FirewoodPile01 - tas de bois de feu (Campfire, Bonfire) - type 8, 0.9 y donc sous walkableClimb: sans effet attendu"
-    },
-    {
-      "displayId": 166,
-      "comment": "Anvil - enclume classique, 197 spawns - type 8"
-    },
-    {
-      "displayId": 201,
-      "comment": "SmallBrazier01 - brasero (Blazing Fire, Burning Brazier), 280 spawns - type 8"
-    },
-    {
-      "displayId": 197,
-      "comment": "DWARVENBRAZIER02 - brasero nain / brasero de cuisson, 156 spawns - types 5 et 8"
-    },
-    {
-      "displayId": 6744,
-      "comment": "BE_Campfire01 - foyer elfe de sang, 143 spawns - type 8"
-    },
-    {
-      "displayId": 7748,
-      "comment": "BonfireNorthrend_01 - grand feu du Norfendre, 108 spawns - types 5 et 8, 7.2 y de haut"
+      "displayId": 5971,
+      "comment": "Mailbox (PostBoxTroll)"
     },
     {
       "displayId": 5974,
       "comment": "OrcPVPBonfireLarge - grand feu orc PVP, 95 spawns - type 8, 8.7 y de haut"
     },
     {
-      "displayId": 7403,
-      "comment": "ANCIENT_D_STANDING_LIGHT - brasero sur pied, 84 spawns - type 8, 5.3 y de haut"
+      "displayId": 6370,
+      "comment": "General Torch 01 / Witchbane Torch - type 5"
+    },
+    {
+      "displayId": 6744,
+      "comment": "BE_Campfire01 - foyer elfe de sang, 143 spawns - type 8"
     },
     {
       "displayId": 7009,
       "comment": "KARAZAHNBONFIRE02 - feu de Karazhan, 54 spawns - type 8"
+    },
+    {
+      "displayId": 7403,
+      "comment": "ANCIENT_D_STANDING_LIGHT - brasero sur pied, 84 spawns - type 8, 5.3 y de haut"
+    },
+    {
+      "displayId": 7748,
+      "comment": "BonfireNorthrend_01 - grand feu du Norfendre, 108 spawns - types 5 et 8, 7.2 y de haut"
     }
   ]
 }
