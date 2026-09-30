@@ -1183,6 +1183,8 @@ public sealed class MmapExtractorService
             if (vx < expandedMinX || vx > expandedMaxX ||
                 vz < expandedMinZ || vz > expandedMaxZ)
                 continue;
+            if (!float.IsFinite(vy) || MathF.Abs(vy) > WowConstants.MaxWorldCoord)
+                continue;
             if (vy < minY) minY = vy;
             if (vy > maxYh) maxYh = vy;
         }
