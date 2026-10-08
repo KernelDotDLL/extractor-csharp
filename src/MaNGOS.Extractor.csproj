@@ -31,8 +31,8 @@
 
   <ItemGroup>
     <Resource Include="Assets\AppIcon.ico" />
-    <Content Include="..\native\RecastBuilderDll\bin\$(Configuration)\RecastBuilderDll.dll" 
-             Condition="Exists('..\native\RecastBuilderDll\bin\$(Configuration)\RecastBuilderDll.dll')"
+    <Content Include="..\native\RecastBuilderDll\bin\Release\RecastBuilderDll.dll"
+             Condition="Exists('..\native\RecastBuilderDll\bin\Release\RecastBuilderDll.dll')"
              CopyToOutputDirectory="PreserveNewest" Link="RecastBuilderDll.dll" />
     <Content Include="..\StormLib.dll"
              Condition="Exists('..\StormLib.dll')"
