@@ -6,6 +6,34 @@ using Microsoft.Extensions.Logging;
 
 namespace MaNGOS.Extractor.VmapExtractor;
 
+internal readonly record struct MangosSpawnKey(
+    uint Id, string Name,
+    float PosX, float PosY, float PosZ,
+    float RotX, float RotY, float RotZ,
+    float Scale) : IComparable<MangosSpawnKey>
+{
+    public static MangosSpawnKey From(in MangosModelSpawn spawn) => new(
+        spawn.Id, spawn.Name,
+        spawn.Pos[0], spawn.Pos[1], spawn.Pos[2],
+        spawn.Rot[0], spawn.Rot[1], spawn.Rot[2],
+        spawn.Scale);
+
+    public int CompareTo(MangosSpawnKey other)
+    {
+        int c = Id.CompareTo(other.Id);
+        if (c != 0) return c;
+        c = string.CompareOrdinal(Name, other.Name);
+        if (c != 0) return c;
+        c = PosX.CompareTo(other.PosX); if (c != 0) return c;
+        c = PosY.CompareTo(other.PosY); if (c != 0) return c;
+        c = PosZ.CompareTo(other.PosZ); if (c != 0) return c;
+        c = RotX.CompareTo(other.RotX); if (c != 0) return c;
+        c = RotY.CompareTo(other.RotY); if (c != 0) return c;
+        c = RotZ.CompareTo(other.RotZ); if (c != 0) return c;
+        return Scale.CompareTo(other.Scale);
+    }
+}
+
 /// <summary>
 /// Phase-2 of the Mangos vmap-extractor: a faithful C# port of
 /// <c>TileAssembler</c> (mangostwo-server/src/game/vmap/TileAssembler.{h,cpp}).
@@ -94,12 +122,12 @@ internal sealed class MangosTileAssembler
 
         // convertWorld2 — TileAssembler.cpp:116-197 (build mapSpawns + bound fixes)
         // Snapshot Values into a List before iterating — we mutate uniqueEntries
-        // later in this same loop (uniqueEntries[spawn.Id] = spawn) to propagate
+        // later in this same loop (uniqueEntries[(TileId, SpawnKey)] = spawn) to propagate
         // the computed bound into the writers that read from uniqueEntries.
         // SortedDictionary throws InvalidOperationException on modification
         // during enumeration, so materialise the values first. We iterate
         // over the (key, value) pairs so we can re-key the entry on the
-        // composite (TileId, SpawnId) below.
+        // composite (TileId, SpawnKey) below.
         var mapSpawns = new List<MangosModelSpawn>(uniqueEntries.Count);
         foreach (var kvp in uniqueEntries.ToList())
         {
@@ -177,13 +205,13 @@ internal sealed class MangosTileAssembler
         var bih = new Bih();
         bih.Build(mapSpawns, GetSpawnBounds);
 
-        // modelNodeIdx — TileAssembler.cpp:148-152. Maps spawn.ID → its index
+        // modelNodeIdx — TileAssembler.cpp:148-152. Maps the spawn key → its index
         // in mapSpawns (= BIH objects[] order). Used by .vmtile to reference
         // the BIH leaf that owns this spawn.
-        var modelNodeIdx = new Dictionary<uint, uint>(mapSpawns.Count);
+        var modelNodeIdx = new Dictionary<MangosSpawnKey, uint>(mapSpawns.Count);
         for (int i = 0; i < mapSpawns.Count; i++)
         {
-            modelNodeIdx[mapSpawns[i].Id] = (uint)i;
+            modelNodeIdx[MangosSpawnKey.From(mapSpawns[i])] = (uint)i;
         }
 
         // isTiled — TileAssembler.cpp:170-172. globalRange = TileEntries.equal_range((65,65)).
@@ -195,7 +223,7 @@ internal sealed class MangosTileAssembler
         var globalSpawns = new List<MangosModelSpawn>();
         foreach (var te in tileEntries)
         {
-            if (te.TileId == globalTileId && uniqueEntries.TryGetValue((te.TileId, te.SpawnId), out var gs))
+            if (te.TileId == globalTileId && uniqueEntries.TryGetValue((te.TileId, te.Key), out var gs))
             {
                 globalSpawns.Add(gs);
             }
@@ -230,11 +258,11 @@ internal sealed class MangosTileAssembler
     // ─────────────────────────────────────────────────────────────────────
 
     private bool TryReadMapSpawns(uint mapId,
-        out SortedDictionary<(uint TileId, uint SpawnId), MangosModelSpawn> uniqueEntries,
-        out List<(uint TileId, uint SpawnId)> tileEntries)
+        out SortedDictionary<(uint TileId, MangosSpawnKey Key), MangosModelSpawn> uniqueEntries,
+        out List<(uint TileId, MangosSpawnKey Key)> tileEntries)
     {
-        uniqueEntries = new SortedDictionary<(uint, uint), MangosModelSpawn>();
-        tileEntries = new List<(uint, uint)>();
+        uniqueEntries = new SortedDictionary<(uint, MangosSpawnKey), MangosModelSpawn>();
+        tileEntries = new List<(uint, MangosSpawnKey)>();
 
         string dirBinPath = Path.Combine(_sourceDir, "dir_bin");
         if (!File.Exists(dirBinPath)) return false;
@@ -261,13 +289,14 @@ internal sealed class MangosTileAssembler
             // readMapSpawns is for ALL maps; we keep only the current one.
             if (recMapId != mapId) continue;
 
-            // Composite key dedup: (TileId, SpawnId) so each tile keeps its own
+            // Composite key dedup: (TileId, SpawnKey) so each tile keeps its own
             // per-tile spawn with its own position/rotation. The C++ uses just
             // (SpawnId) which only works because TileAssembler runs per-tile;
             // our per-map run yields 7x duplicates per spawn with distinct
             // transforms, and the single-Id dedup silently collapses the
             // 2nd+ tile's spawn onto the 1st's position.
-            var dedupKey = (PackTileId(tileX, tileY), spawn.Id);
+            var spawnKey = MangosSpawnKey.From(spawn);
+            var dedupKey = (PackTileId(tileX, tileY), spawnKey);
             if (!uniqueEntries.ContainsKey(dedupKey))
             {
                 uniqueEntries.Add(dedupKey, spawn);
@@ -275,7 +304,7 @@ internal sealed class MangosTileAssembler
             // TileEntries.insert({packTileID(tileX,tileY), spawn.ID}) — multimap.
             // Ordered by tileId then insertion order. We keep insertion order
             // within a tile via a List, which matches multimap iteration.
-            tileEntries.Add((PackTileId(tileX, tileY), spawn.Id));
+            tileEntries.Add((PackTileId(tileX, tileY), spawnKey));
         }
 
         return uniqueEntries.Count > 0;
@@ -486,9 +515,9 @@ internal sealed class MangosTileAssembler
     // ─────────────────────────────────────────────────────────────────────
 
     private void WriteVmtiles(uint mapId, string mapName,
-        SortedDictionary<(uint TileId, uint SpawnId), MangosModelSpawn> uniqueEntries,
-        List<(uint TileId, uint SpawnId)> tileEntries,
-        Dictionary<uint, uint> modelNodeIdx,
+        SortedDictionary<(uint TileId, MangosSpawnKey Key), MangosModelSpawn> uniqueEntries,
+        List<(uint TileId, MangosSpawnKey Key)> tileEntries,
+        Dictionary<MangosSpawnKey, uint> modelNodeIdx,
         uint globalTileId)
     {
         // Per TileAssembler.cpp:202-246: the .vmtile files are written
@@ -501,31 +530,31 @@ internal sealed class MangosTileAssembler
         // into the GOBJ chunk of the .vmtree, not into a .vmtile).
         // TileAssembler.cpp:204-246 iterates the multimap; for each tileId it
         // writes nSpawns = count(tileId), then each (spawn, modelNodeIdx).
-        var byTile = new Dictionary<uint, List<uint>>();
+        var byTile = new Dictionary<uint, List<MangosSpawnKey>>();
         var tileOrder = new List<uint>();
         foreach (var te in tileEntries)
         {
             if (te.TileId == globalTileId) continue; // worldspawn — in GOBJ
-            if (!uniqueEntries.TryGetValue((te.TileId, te.SpawnId), out var spawn)) continue;
+            if (!uniqueEntries.TryGetValue((te.TileId, te.Key), out var spawn)) continue;
             if ((spawn.Flags & MOD_WORLDSPAWN) != 0) continue; // TileAssembler.cpp:207-210
 
             if (!byTile.TryGetValue(te.TileId, out var bucket))
             {
-                bucket = new List<uint>();
+                bucket = new List<MangosSpawnKey>();
                 byTile[te.TileId] = bucket;
                 tileOrder.Add(te.TileId);
             }
-            bucket.Add(te.SpawnId);
+            bucket.Add(te.Key);
         }
 
         foreach (var tileId in tileOrder)
         {
             UnpackTileId(tileId, out uint tx, out uint ty);
             var entries = new List<(MangosModelSpawn Spawn, uint ReferencedVal)>();
-            foreach (var spawnId in byTile[tileId])
+            foreach (var spawnKey in byTile[tileId])
             {
-                var spawn = uniqueEntries[(tileId, spawnId)];
-                uint referencedVal = modelNodeIdx.TryGetValue(spawn.Id, out var rv) ? rv : 0u;
+                var spawn = uniqueEntries[(tileId, spawnKey)];
+                uint referencedVal = modelNodeIdx.TryGetValue(spawnKey, out var rv) ? rv : 0u;
                 entries.Add((spawn, referencedVal));
             }
 

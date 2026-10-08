@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using MaNGOS.Extractor.Core.Constants;
 using MaNGOS.Extractor.Formats.Adt.Models;
 using MaNGOS.Extractor.Formats.Vmap.Mangos;
+using MaNGOS.Extractor.VmapExtractor;
 
 namespace MaNGOS.Extractor.MmapExtractor;
 
@@ -37,7 +38,7 @@ internal sealed class MangosVmapGeometryLoader
 
     // Cache which placements were already appended to a tile — mirrors the
     // seenUniqueIds set used in the previous raw-based implementation.
-    private readonly HashSet<uint> _seenPlacementIds = new();
+    private readonly HashSet<MangosSpawnKey> _seenPlacementIds = new();
 
     // One warning per unmapped WMO liquid type, not one per placement.
     private readonly HashSet<short> _unmappedLiquidTypes = new();
@@ -57,7 +58,7 @@ internal sealed class MangosVmapGeometryLoader
     /// <summary>
     /// Append the WMO/M2 collision mesh of every WMO/M2 placement that lives
     /// in the 3x3 ADT neighborhood (centerX/Y ± 1) into the output geometry.
-    /// The placement uniqueness is per-game-instance (the ModelSpawn's Id),
+    /// The placement uniqueness is per-game-instance (the ModelSpawn's Id, name, transform),
     /// so a model referenced from two ADT tiles contributes twice.
     /// </summary>
     public void AppendNeighborhoodCollision(
@@ -86,7 +87,7 @@ internal sealed class MangosVmapGeometryLoader
 
                 foreach (var (spawn, _) in entries)
                 {
-                    if (!_seenPlacementIds.Add(spawn.Id)) continue; // already contributed
+                    if (!_seenPlacementIds.Add(MangosSpawnKey.From(spawn))) continue; // already contributed
 
                     if (spawn.IsM2) m2Count++; else wmoCount++;
 
@@ -128,7 +129,7 @@ internal sealed class MangosVmapGeometryLoader
         int wmoCount = 0, m2Count = 0, loadedVmo = 0, loadedVmd = 0, skipped = 0;
         foreach (var spawn in globalSpawns)
         {
-            if (!_seenPlacementIds.Add(spawn.Id)) continue;
+            if (!_seenPlacementIds.Add(MangosSpawnKey.From(spawn))) continue;
 
             if (spawn.IsM2) m2Count++; else wmoCount++;
             if (!AppendSpawnCollision(spawn, outVerts, outTris, outAreas, out bool addedVmo))
