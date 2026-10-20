@@ -9,7 +9,7 @@ namespace MaNGOS.Extractor.Formats.Mpq;
 /// </summary>
 public static class StormLib
 {
-    private const string DllName = "StormLib.dll";
+    private const string DllName = "StormLib";
 
     // Archive Operations
 
@@ -19,7 +19,8 @@ public static class StormLib
     /// <param name="flags">Open flags (e.g., MPQ_OPEN_NO_LISTFILE).</param>
     /// <param name="handle">Output archive handle on success.</param>
     /// <returns>True if archive opened successfully.</returns>
-    [DllImport(DllName, EntryPoint = "SFileOpenArchive", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi, SetLastError = true)]
+    [DllImport("StormLib", EntryPoint = "SFileOpenArchive", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.I1)]
     public static extern bool SFileOpenArchive(
         string path,
         uint priority,
@@ -28,6 +29,7 @@ public static class StormLib
 
     /// <summary>Closes an MPQ archive handle.</summary>
     [DllImport(DllName, EntryPoint = "SFileCloseArchive", CallingConvention = CallingConvention.Cdecl, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.I1)]
     public static extern bool SFileCloseArchive(IntPtr archive);
 
     /// <summary>Opens a file within an archive for reading.</summary>
@@ -37,6 +39,7 @@ public static class StormLib
     /// <param name="fileHandle">Output file handle on success.</param>
     /// <returns>True if file opened successfully.</returns>
     [DllImport(DllName, EntryPoint = "SFileOpenFileEx", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.I1)]
     public static extern bool SFileOpenFileEx(
         IntPtr archive,
         string fileName,
@@ -45,6 +48,7 @@ public static class StormLib
 
     /// <summary>Closes a file handle opened by SFileOpenFileEx.</summary>
     [DllImport(DllName, EntryPoint = "SFileCloseFile", CallingConvention = CallingConvention.Cdecl, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.I1)]
     public static extern bool SFileCloseFile(IntPtr fileHandle);
 
     /// <summary>Retrieves the size of an opened file.</summary>
@@ -62,6 +66,7 @@ public static class StormLib
     /// <param name="ov">Overlapped structure (pass IntPtr.Zero for synchronous read).</param>
     /// <returns>True if read succeeded.</returns>
     [DllImport(DllName, EntryPoint = "SFileReadFile", CallingConvention = CallingConvention.Cdecl)]
+    [return: MarshalAs(UnmanagedType.I1)]
     public static extern bool SFileReadFile(
         IntPtr fileHandle,
         byte[] buffer,
@@ -97,10 +102,12 @@ public static class StormLib
     /// <param name="findData">Output buffer for file information.</param>
     /// <returns>True if another file was found.</returns>
     [DllImport(DllName, EntryPoint = "SFileFindNextFile", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
+    [return: MarshalAs(UnmanagedType.I1)]
     public static extern bool SFileFindNextFile(IntPtr findHandle, out SFileFindData findData);
 
     /// <summary>Closes a file find handle.</summary>
     [DllImport(DllName, EntryPoint = "SFileFindClose", CallingConvention = CallingConvention.Cdecl)]
+    [return: MarshalAs(UnmanagedType.I1)]
     public static extern bool SFileFindClose(IntPtr findHandle);
 
     /// <summary>Enumerates all files matching a pattern within an archive.</summary>
@@ -110,6 +117,7 @@ public static class StormLib
     /// <param name="userData">User data passed to callback.</param>
     /// <returns>True if enumeration completed.</returns>
     [DllImport(DllName, EntryPoint = "SFileFindFile", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
+    [return: MarshalAs(UnmanagedType.I1)]
     public static extern bool SFileFindFile(
         IntPtr archive,
         string searchMask,
@@ -118,6 +126,7 @@ public static class StormLib
 
     /// <summary>Checks if a file exists within an archive.</summary>
     [DllImport(DllName, EntryPoint = "SFileHasFile", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.I1)]
     public static extern bool SFileHasFile(IntPtr archive, string fileName);
 
     /// <summary>Gets the locale of a file in the archive.</summary>
@@ -126,6 +135,7 @@ public static class StormLib
     /// <param name="fileLocale">Output locale code.</param>
     /// <returns>True if file found.</returns>
     [DllImport(DllName, EntryPoint = "SFileGetFileLocale", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
+    [return: MarshalAs(UnmanagedType.I1)]
     public static extern bool SFileGetFileLocale(
         IntPtr archive,
         string fileName,
@@ -135,10 +145,12 @@ public static class StormLib
 
     /// <summary>Gets the number of files in an archive.</summary>
     [DllImport(DllName, EntryPoint = "SFileGetArchiveName", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
+    [return: MarshalAs(UnmanagedType.I1)]
     public static extern bool SFileGetArchiveName(IntPtr archive, [Out] char[] nameBuffer, int bufferLength);
 
     /// <summary>Retrieves archive info (open count, etc.).</summary>
     [DllImport(DllName, EntryPoint = "SFileGetBasePath", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
+    [return: MarshalAs(UnmanagedType.I1)]
     public static extern bool SFileGetBasePath(IntPtr archive, [Out] char[] basePath, int bufferLength);
 
     // Open Flags
@@ -181,7 +193,7 @@ public static class StormLib
 [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
 public struct SFileFindData
 {
-    public const int MaxFileNameLength = 260;
+    public const int MaxFileNameLength = 1024; // Linux StormPort.h MAX_PATH
 
     /// <summary>Full file name (null-terminated ANSI, MAX_PATH chars).</summary>
     [MarshalAs(UnmanagedType.ByValTStr, SizeConst = MaxFileNameLength)]

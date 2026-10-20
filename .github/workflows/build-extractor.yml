@@ -113,19 +113,20 @@ jobs:
         run: |
           git clone --depth 1 https://github.com/ladislav-zezula/StormLib.git "$RUNNER_TEMP/StormLib"
           cmake -S "$RUNNER_TEMP/StormLib" -B "$RUNNER_TEMP/StormLib/build" \
-            -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON
+            -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON \
+            -DSTORM_USE_BUNDLED_LIBRARIES=ON -DSTORM_BUILD_TESTS=OFF
           cmake --build "$RUNNER_TEMP/StormLib/build" -j"$(nproc)"
           find "$RUNNER_TEMP/StormLib/build" -maxdepth 3 -type f \( -name 'libStormLib.so*' -o -name 'libstorm.so*' \) -print
           storm=$(find "$RUNNER_TEMP/StormLib/build" -maxdepth 3 -type f \( -name 'libStormLib.so*' -o -name 'libstorm.so*' \) | head -n1)
           test -n "$storm"
-          cp "$storm" StormLib.dll
+          cp "$storm" libStormLib.so
 
       - name: Publish self-contained linux-x64
         run: |
           dotnet publish src/MaNGOS.Extractor.Headless.csproj -c Release -r linux-x64 \
             --self-contained true -p:PublishSingleFile=false -o publish-linux
           cp libRecastBuilderDll.so publish-linux/
-          cp StormLib.dll publish-linux/
+          cp libStormLib.so publish-linux/
           ls -l publish-linux | tail -20
 
       - name: Upload Linux artifact
