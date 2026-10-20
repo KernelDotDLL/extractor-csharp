@@ -17,7 +17,6 @@ using MaNGOS.Extractor.Formats.Wdt;
 using MaNGOS.Extractor.Formats.Wmo.Models;
 using MaNGOS.Extractor.Formats.Wmo.Parsing;
 using MaNGOS.Extractor.MmapExtractor.Recast;
-using MaNGOS.Extractor.UI;
 
 namespace MaNGOS.Extractor.MmapExtractor;
 
