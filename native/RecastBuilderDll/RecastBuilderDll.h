@@ -1,9 +1,13 @@
 #pragma once
 
-#ifdef RECASTBUILDERDLL_EXPORTS
-#define RECAST_API __declspec(dllexport)
+#if defined(_WIN32)
+#  ifdef RECASTBUILDERDLL_EXPORTS
+#    define RECAST_API __declspec(dllexport)
+#  else
+#    define RECAST_API __declspec(dllimport)
+#  endif
 #else
-#define RECAST_API __declspec(dllimport)
+#  define RECAST_API __attribute__((visibility("default")))
 #endif
 
 #include <cstdint>

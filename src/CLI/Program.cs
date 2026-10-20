@@ -8,7 +8,6 @@ using MaNGOS.Extractor.Formats.Mpq;
 using MaNGOS.Extractor.MapExtractor;
 using MaNGOS.Extractor.MmapExtractor;
 using MaNGOS.Extractor.RoadExtractor;
-using MaNGOS.Extractor.UI;
 using MaNGOS.Extractor.VmapExtractor;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Console;
@@ -24,9 +23,8 @@ public static class Program
     {
         if (args.Length == 0)
         {
-            var app = new App();
-            app.InitializeComponent();
-            return app.Run();
+            Console.WriteLine("Usage: MaNGOS.Extractor.CLI --wow <client dir> --out <output dir> [--phases ...] [--maps ...] [--tile x,y]");
+            return 2;
         }
         if (args[0] == "pathfind")
         {

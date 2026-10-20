@@ -7,7 +7,7 @@ permissions:
   contents: read
 
 jobs:
-  build:
+  windows:
     runs-on: windows-latest
 
     steps:
@@ -35,26 +35,25 @@ jobs:
             /p:PlatformToolset=v143 `
             /p:RecastRoot="$env:RUNNER_TEMP\recastnavigation"
 
-      - name: Fetch and build StormLib
+      - name: Install StormLib with vcpkg
         shell: pwsh
         run: |
-          git clone --depth 1 https://github.com/ladislav-zezula/StormLib.git "$env:RUNNER_TEMP\StormLib"
-          cmake -S "$env:RUNNER_TEMP\StormLib" -B "$env:RUNNER_TEMP\StormLib\build" -A x64 -DBUILD_SHARED_LIBS=ON
-          cmake --build "$env:RUNNER_TEMP\StormLib\build" --config Release
-          Get-ChildItem "$env:RUNNER_TEMP\StormLib" -Recurse -Filter *.dll |
-            Select-Object -ExpandProperty FullName
-
-      - name: Put StormLib next to the project
-        shell: pwsh
-        run: |
-          $dll = Get-ChildItem "$env:RUNNER_TEMP\StormLib" -Recurse -Filter StormLib.dll |
+          $vcpkgRoot = $env:VCPKG_INSTALLATION_ROOT
+          if (-not $vcpkgRoot) { $vcpkgRoot = 'C:\vcpkg' }
+          $vcpkg = Join-Path $vcpkgRoot 'vcpkg.exe'
+          if (-not (Test-Path $vcpkg)) { throw "vcpkg.exe not found at $vcpkg" }
+          & $vcpkg install stormlib:x64-windows --clean-after-build
+          if ($LASTEXITCODE -ne 0) { throw "vcpkg install failed with $LASTEXITCODE" }
+          $dll = Get-ChildItem (Join-Path $vcpkgRoot 'installed\x64-windows\bin') -Filter *.dll |
+                 Where-Object { $_.Name -match '^(StormLib|storm)\.dll$' } |
                  Select-Object -First 1
           if (-not $dll) {
-            $dll = Get-ChildItem "$env:RUNNER_TEMP\StormLib" -Recurse -Filter storm.dll |
-                   Select-Object -First 1
+            Get-ChildItem (Join-Path $vcpkgRoot 'installed\x64-windows') -Recurse -Filter *.dll |
+              Select-Object -ExpandProperty FullName
+            throw "StormLib DLL was not produced"
           }
-          if (-not $dll) { throw "StormLib DLL was not produced" }
           Copy-Item $dll.FullName .\StormLib.dll -Force
+          Write-Host "StormLib: $($dll.FullName)"
 
       - name: Build extractor
         shell: pwsh
@@ -67,17 +66,70 @@ jobs:
         run: |
           dotnet publish src\MaNGOS.Extractor.csproj -c Release -r win-x64 --self-contained true `
             -p:PublishSingleFile=false -p:Platform=x64 `
-            -p:StartupObject=MaNGOS.Extractor.CLI.Program -o publish
+            -p:StartupObject=MaNGOS.Extractor.CLI.Program -o publish-windows
 
       - name: Add native DLLs to publish
         shell: pwsh
         run: |
-          Copy-Item native\RecastBuilderDll\bin\Release\RecastBuilderDll.dll publish\ -Force
-          Copy-Item .\StormLib.dll publish\ -Force
-          Get-ChildItem publish | Select-Object Name, Length
+          Copy-Item native\RecastBuilderDll\bin\Release\RecastBuilderDll.dll publish-windows\ -Force
+          Copy-Item .\StormLib.dll publish-windows\ -Force
+          Get-ChildItem publish-windows | Select-Object Name, Length
 
-      - name: Upload artifact
+      - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
         with:
           name: extractor-win-x64
-          path: publish
+          path: publish-windows
+
+  linux:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Fetch Recast/Detour
+        run: |
+          git clone --depth 1 https://github.com/recastnavigation/recastnavigation.git "$RUNNER_TEMP/recastnavigation"
+
+      - name: Build native RecastBuilderDll.so
+        run: |
+          g++ -std=c++17 -O2 -fPIC -shared \
+            -DDT_POLYREF64 -DRECASTBUILDERDLL_EXPORTS \
+            -I native/RecastBuilderDll \
+            -I "$RUNNER_TEMP/recastnavigation/Recast/Include" \
+            -I "$RUNNER_TEMP/recastnavigation/Detour/Include" \
+            native/RecastBuilderDll/RecastBuilderDll.cpp \
+            "$RUNNER_TEMP"/recastnavigation/Recast/Source/*.cpp \
+            "$RUNNER_TEMP"/recastnavigation/Detour/Source/*.cpp \
+            -o libRecastBuilderDll.so
+
+      - name: Fetch and build StormLib.so
+        run: |
+          git clone --depth 1 https://github.com/ladislav-zezula/StormLib.git "$RUNNER_TEMP/StormLib"
+          cmake -S "$RUNNER_TEMP/StormLib" -B "$RUNNER_TEMP/StormLib/build" \
+            -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON
+          cmake --build "$RUNNER_TEMP/StormLib/build" -j"$(nproc)"
+          find "$RUNNER_TEMP/StormLib/build" -maxdepth 3 -type f \( -name 'libStormLib.so*' -o -name 'libstorm.so*' \) -print
+          storm=$(find "$RUNNER_TEMP/StormLib/build" -maxdepth 3 -type f \( -name 'libStormLib.so*' -o -name 'libstorm.so*' \) | head -n1)
+          test -n "$storm"
+          cp "$storm" StormLib.dll
+
+      - name: Publish self-contained linux-x64
+        run: |
+          dotnet publish src/MaNGOS.Extractor.Headless.csproj -c Release -r linux-x64 \
+            --self-contained true -p:PublishSingleFile=false -o publish-linux
+          cp libRecastBuilderDll.so publish-linux/
+          cp StormLib.dll publish-linux/
+          ls -l publish-linux | tail -20
+
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: extractor-linux-x64
+          path: publish-linux
